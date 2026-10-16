@@ -1,4 +1,4 @@
-// ERFAN-MD
+// ERFAN-MD — FUN TEXT COMMANDS (UPDATED v2)
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { cmd } from '../command.js';
@@ -11,6 +11,24 @@ const getBotId = (conn) => {
   return conn.user.id.split(':')[0] + '@s.whatsapp.net';
 };
 
+// ============================================================
+// NEW TARGET SYSTEM (v2):
+// - Command typed as a REPLY to someone's message
+//   -> that person is mentioned ONCE (never the sender)
+// - Command typed normally (no reply)
+//   -> NO one is mentioned, generic fun text is sent
+// - The sender is NEVER mentioned by these commands
+// ============================================================
+async function pickTarget(conn, mek, m) {
+  try {
+    const quotedSender = (m && m.quoted && m.quoted.sender)
+      ? m.quoted.sender
+      : (mek && mek.quoted && mek.quoted.sender ? mek.quoted.sender : null);
+    if (quotedSender) return quotedSender;
+    return null;
+  } catch { return null; }
+}
+
 // ============================================
 // 1. ISHQ METER COMMAND
 // ============================================
@@ -22,7 +40,9 @@ cmd({
   category: "💬 Fun Text",
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
-  const sender = mek.sender;
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   const percent = Math.floor(Math.random() * 100) + 1;
   
   const messages = [
@@ -35,8 +55,8 @@ cmd({
   const msg = messages.find(x => percent >= x.r[0] && percent <= x.r[1]);
   
   await conn.sendMessage(mek.chat, {
-    text: `💘 *ISHQ METER* 💘\n\n@${sender.split("@")[0]} ka ishq:\n\n${msg.t}`,
-    mentions: [sender]
+    text: `💘 *ISHQ METER* 💘\n\nTum ka ishq:\n\n${msg.t}`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -52,21 +72,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const victim = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const msgs = [
-    `🙈 *ANDHA ISHQ ALERT!* 🙈\n\n@${sender.split("@")[0]} aaj se @${victim.id.split("@")[0]} ka\n*PAGAL DEEWANA* ban gaya/gayi hai! 😂\n\n"Raat ko sapne mein bhi teri hi tasweer!"\n"Din mein bhi teri hi fikar!"\n\n*Bhai/Behen, doctor ko dikha lo!* 💀😂`,
-    `🙈 *ANDHA PYAAR!* 🙈\n\n@${sender.split("@")[0]} toh @${victim.id.split("@")[0]} ke liye\nmathaa tek chuka/chuki hai! 🙇\n\nHar subah status check: ✅\nHar raat online dekhna: ✅\nBlock hone ke baad bhi message: ✅\n\n*Ishq mein aql kho di!* 😂💔`
+    `🙈 *ANDHA ISHQ ALERT!* 🙈\n\nTum aaj se ${t} ka\n*PAGAL DEEWANA* ban gaya/gayi hai! 😂\n\n"Raat ko sapne mein bhi teri hi tasweer!"\n"Din mein bhi teri hi fikar!"\n\n*Bhai/Behen, doctor ko dikha lo!* 💀😂`,
+    `🙈 *ANDHA PYAAR!* 🙈\n\nTum toh ${t} ke liye\nmathaa tek chuka/chuki hai! 🙇\n\nHar subah status check: ✅\nHar raat online dekhna: ✅\nBlock hone ke baad bhi message: ✅\n\n*Ishq mein aql kho di!* 😂💔`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: msgs[Math.floor(Math.random() * msgs.length)], 
-    mentions: [sender, victim.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -82,21 +99,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const beloved = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const msgs = [
-    `🌹 *LAFZ-E-MOHABBAT* 🌹\n\n@${sender.split("@")[0]} ne @${beloved.id.split("@")[0]} ke liye kaha:\n\n*"Teri aankhein - do sitare meri raat ke,\nTeri muskaan - subah ki pehli dhoop,\nTere bina ye group bhi soona lagta hai,\nHai teri hasrat dil mein aisa kuch!"*\n\n🥀 Dono ko MUBARAK! 🎊`,
-    `🌹 *DIL KI ZUBAAN* 🌹\n\n@${sender.split("@")[0]} dil mein chhupa ke rakhta/rakhti tha/thi,\naaj bol hi diya @${beloved.id.split("@")[0]} ko:\n\n*"Jab tum online hote/hoti ho,\ntoh mera dil bhi recharge ho jaata hai!"* 😂💓\n\nSabse sach baat! 🔥`
+    `🌹 *LAFZ-E-MOHABBAT* 🌹\n\nTum ne ${t} ke liye kaha:\n\n*"Teri aankhein - do sitare meri raat ke,\nTeri muskaan - subah ki pehli dhoop,\nTere bina ye group bhi soona lagta hai,\nHai teri hasrat dil mein aisa kuch!"*\n\n🥀 Dono ko MUBARAK! 🎊`,
+    `🌹 *DIL KI ZUBAAN* 🌹\n\nTum dil mein chhupa ke rakhta/rakhti tha/thi,\naaj bol hi diya ${t} ko:\n\n*"Jab tum online hote/hoti ho,\ntoh mera dil bhi recharge ho jaata hai!"* 😂💓\n\nSabse sach baat! 🔥`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: msgs[Math.floor(Math.random() * msgs.length)], 
-    mentions: [sender, beloved.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -112,21 +126,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const msgs = [
-    `👀 *PEHLI NAZAR KA KISSA!* 👀\n\nJab @${sender.split("@")[0]} ne pehli baar\n@${target.id.split("@")[0]} ki DP dekhi...\n\n❤️ Dil: *"Yeh kaun hai?!"*\n📱 Haath: *Kaanpne lage*\n🧠 Dimag: *Hang ho gaya*\n😳 Chehra: *Laal ho gaya*\n\n*Pehli nazar mein hi kaam tamaam!* 💘😂`,
-    `👀 *NAZAR MILI NAZAR!* 👀\n\n@${sender.split("@")[0]} ka @${target.id.split("@")[0]} ki\nnazar se pehla meeting:\n\n*"Bas ek pal ko dekha,\naur pal bhar mein dil le gaye!"*\n\nShayar ban gaye aap toh! 🌹😂`
+    `👀 *PEHLI NAZAR KA KISSA!* 👀\n\nJab Tum ne pehli baar\n${t} ki DP dekhi...\n\n❤️ Dil: *"Yeh kaun hai?!"*\n📱 Haath: *Kaanpne lage*\n🧠 Dimag: *Hang ho gaya*\n😳 Chehra: *Laal ho gaya*\n\n*Pehli nazar mein hi kaam tamaam!* 💘😂`,
+    `👀 *NAZAR MILI NAZAR!* 👀\n\nTum ka ${t} ki\nnazar se pehla meeting:\n\n*"Bas ek pal ko dekha,\naur pal bhar mein dil le gaye!"*\n\nShayar ban gaye aap toh! 🌹😂`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: msgs[Math.floor(Math.random() * msgs.length)], 
-    mentions: [sender, target.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -142,21 +153,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const msgs = [
-    `😜 *DILLAGI TIME!* 😜\n\n@${sender.split("@")[0]} ne @${target.id.split("@")[0]} se kaha:\n\n*"Teri smile dekh ke mujhe neend nahi aati!\nAur teri baat sun ke bhi neend nahi aati!\nYani tu meri insomnia ki wajah hai!"* 😂💀\n\nYeh complaint hai ya compliment? 🤔`,
-    `😜 *CHHERHNA SHURU!* 😜\n\n@${sender.split("@")[0]} ka @${target.id.split("@")[0]} ko message:\n\n*"Yaar tu online tha/thi,\nmain bhi online tha/thi,\nphir tune reply kyun nahi kiya?!\nYeh ZULM hai bhai/behan!"* 😭😂\n\nKoi jawab do bhai! 👀`
+    `😜 *DILLAGI TIME!* 😜\n\nTum ne ${t} se kaha:\n\n*"Teri smile dekh ke mujhe neend nahi aati!\nAur teri baat sun ke bhi neend nahi aati!\nYani tu meri insomnia ki wajah hai!"* 😂💀\n\nYeh complaint hai ya compliment? 🤔`,
+    `😜 *CHHERHNA SHURU!* 😜\n\nTum ka ${t} ko message:\n\n*"Yaar tu online tha/thi,\nmain bhi online tha/thi,\nphir tune reply kyun nahi kiya?!\nYeh ZULM hai bhai/behan!"* 😭😂\n\nKoi jawab do bhai! 👀`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: msgs[Math.floor(Math.random() * msgs.length)], 
-    mentions: [sender, target.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -173,19 +181,18 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const msgs = [
-    `✨ *GROUP KA SABSE KHOOBSURAT!* ✨\n\nAaj ka Official Award:\n*"Most Beautiful in Group"* 🏆\n\nJaata hai @${target.id.split("@")[0]} ko!\n\n*"Teri khoobsurti ka koi jawab nahi,\nTere saamne chand bhi phika lagta hai,\nAllah ne banaya hai tujhe bahut dhyaan se!"* 🌙✨\n\nSabko agree karna hoga! 💯`,
-    `✨ *HASEEN AWARD!* ✨\n\n@${target.id.split("@")[0]} sun!\n\n*Aaj scientific research ne prove kiya hai*\nke tum is group ke sabse khoobsurat member ho!\n\nEvidence:\n📸 DP - MashaAllah 🥰\n💬 Baatein - Dil jeet leti hain\n✨ Presence - Group chamak jaata hai\n\n*Mubarak ho!* 🎊`
+    `✨ *GROUP KA SABSE KHOOBSURAT!* ✨\n\nAaj ka Official Award:\n*"Most Beautiful in Group"* 🏆\n\nJaata hai ${t} ko!\n\n*"Teri khoobsurti ka koi jawab nahi,\nTere saamne chand bhi phika lagta hai,\nAllah ne banaya hai tujhe bahut dhyaan se!"* 🌙✨\n\nSabko agree karna hoga! 💯`,
+    `✨ *HASEEN AWARD!* ✨\n\n${t} sun!\n\n*Aaj scientific research ne prove kiya hai*\nke tum is group ke sabse khoobsurat member ho!\n\nEvidence:\n📸 DP - MashaAllah 🥰\n💬 Baatein - Dil jeet leti hain\n✨ Presence - Group chamak jaata hai\n\n*Mubarak ho!* 🎊`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: msgs[Math.floor(Math.random() * msgs.length)], 
-    mentions: [target.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -201,18 +208,15 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const bpm = Math.floor(Math.random() * 150) + 60;
   
   await conn.sendMessage(mek.chat, {
-    text: `💓 *DIL KI DHADKAN TEST* 💓\n\n@${sender.split("@")[0]} ki normal heartbeat: *72 BPM*\n\nJab @${target.id.split("@")[0]} ka naam aaya:\n\n💥 BPM: *${bpm}* 💥\n\n${bpm > 150 ? "🚨 *EMERGENCY! Ambulance bulao!* 😂💀\nYeh toh seedha ICU wala pyaar hai!" : bpm > 100 ? "😍 *WOWWW! Kaafi tez hai!*\nKuch toh hai bhai... 👀" : "😊 *Normal range mein hai!*\nPar dil mein kuch zaroor hai! 💕"}`,
-    mentions: [sender, target.id]
+    text: `💓 *DIL KI DHADKAN TEST* 💓\n\nTum ki normal heartbeat: *72 BPM*\n\nJab ${t} ka naam aaya:\n\n💥 BPM: *${bpm}* 💥\n\n${bpm > 150 ? "🚨 *EMERGENCY! Ambulance bulao!* 😂💀\nYeh toh seedha ICU wala pyaar hai!" : bpm > 100 ? "😍 *WOWWW! Kaafi tez hai!*\nKuch toh hai bhai... 👀" : "😊 *Normal range mein hai!*\nPar dil mein kuch zaroor hai! 💕"}`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -228,21 +232,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const beloved = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const letters = [
-    `💌 *MOHABBAT KA PEHLA KHAT* 💌\n\nFrom: @${sender.split("@")[0]}\nTo: @${beloved.id.split("@")[0]}\n\n*"Jab se tumhe dekha hai,\nNa subah acchi lagti hai,\nNa raat chain se kaatti hai,\nHar waqt bas tumhara hi khayal...\n\nYeh khat likh raha/rahi hoon,\nBaat karne ki himmat nahi!\nBas itna hi kehna tha ke...\nTum ho toh duniya acchi lagti hai!"*\n\n💝 Forever Tumhara/Tumhari 💝`,
-    `💌 *PEHLA KHAT - PEHLA PYAAR* 💌\n\n@${sender.split("@")[0]} ne @${beloved.id.split("@")[0]} ke liye likha:\n\n*"Teri ek muskaan ne mujhe\nShayar bana diya!\nTere ek message ne\nSaara din sundar kar diya!\n\nMain jaanta/jaanti hoon,\nTum padhoge/padhogi aur hasoge/hasogi,\nLekin is hans mein bhi mera dil hai!"*\n\n😂😭 Pagal ho gaya/gayi yeh banda/bandi! 💖`
+    `💌 *MOHABBAT KA PEHLA KHAT* 💌\n\nFrom: Tum\nTo: ${t}\n\n*"Jab se tumhe dekha hai,\nNa subah acchi lagti hai,\nNa raat chain se kaatti hai,\nHar waqt bas tumhara hi khayal...\n\nYeh khat likh raha/rahi hoon,\nBaat karne ki himmat nahi!\nBas itna hi kehna tha ke...\nTum ho toh duniya acchi lagti hai!"*\n\n💝 Forever Tumhara/Tumhari 💝`,
+    `💌 *PEHLA KHAT - PEHLA PYAAR* 💌\n\nTum ne ${t} ke liye likha:\n\n*"Teri ek muskaan ne mujhe\nShayar bana diya!\nTere ek message ne\nSaara din sundar kar diya!\n\nMain jaanta/jaanti hoon,\nTum padhoge/padhogi aur hasoge/hasogi,\nLekin is hans mein bhi mera dil hai!"*\n\n😂😭 Pagal ho gaya/gayi yeh banda/bandi! 💖`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: letters[Math.floor(Math.random() * letters.length)], 
-    mentions: [sender, beloved.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -258,21 +259,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const msgs = [
-    `😤 *ZIDDI DIL KI REPORT!* 😤\n\n@${sender.split("@")[0]} ka dil @${target.id.split("@")[0]} ke baare mein:\n\nDimag: "Ignore karo!"\nDil: "Nahi karta!" 💢\n\nDimag: "Block kar do!"\nDil: "Bilkul nahi!" 😤\n\nDimag: "Baat mat karo!"\nDil: *pehle hi message kar chuka* 😂\n\n*Ziddi dil ka koi ilaj nahi!* 💔❤️`,
-    `😤 *NAKHRE WALA DIL!* 😤\n\n@${sender.split("@")[0]} ka dil @${target.id.split("@")[0]} ke liye:\n\n*"Main nahi sochta/sochti unke baare mein..."\n(5 second baad dil ne unka profile khol liya) 😂\n\n"Mujhe koi farq nahi parta..."\n(Raat ko unka status 10 baar dekha) 👀\n\n"Main bilkul theek hoon..."\n(Unhe dekh ke neend nahi aati) 😭*\n\nYeh dil bhi na! 💀💖`
+    `😤 *ZIDDI DIL KI REPORT!* 😤\n\nTum ka dil ${t} ke baare mein:\n\nDimag: "Ignore karo!"\nDil: "Nahi karta!" 💢\n\nDimag: "Block kar do!"\nDil: "Bilkul nahi!" 😤\n\nDimag: "Baat mat karo!"\nDil: *pehle hi message kar chuka* 😂\n\n*Ziddi dil ka koi ilaj nahi!* 💔❤️`,
+    `😤 *NAKHRE WALA DIL!* 😤\n\nTum ka dil ${t} ke liye:\n\n*"Main nahi sochta/sochti unke baare mein..."\n(5 second baad dil ne unka profile khol liya) 😂\n\n"Mujhe koi farq nahi parta..."\n(Raat ko unka status 10 baar dekha) 👀\n\n"Main bilkul theek hoon..."\n(Unhe dekh ke neend nahi aati) 😭*\n\nYeh dil bhi na! 💀💖`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: msgs[Math.floor(Math.random() * msgs.length)], 
-    mentions: [sender, target.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -288,21 +286,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const msgs = [
-    `🥺 *YAAD AATA HAI...* 🥺\n\n@${sender.split("@")[0]} jab @${target.id.split("@")[0]} ki\nyaad aati hai toh:\n\n🌙 Raat ko: *Neend nahi aati*\n☀️ Din mein: *Kuch accha nahi lagta*\n📱 Phone pe: *Baar baar unka naam dhundha*\n🎵 Gaana suna: *Unhe yaad kiya*\n🌧️ Baarish: *Aur zyada yaad aaye*\n\n*"Teri yaad aati hai jab tujhe bhoolna chahta/chahti hoon!"* 💔😂`,
-    `🥺 *MISSING YOU LEVEL: 9999* 🥺\n\n@${target.id.split("@")[0]} ki @${sender.split("@")[0]} ko\nkitni yaad aati hai:\n\n*"Chai peeta/peeti hoon - teri yaad*\n*Gaana sunta/sunti hoon - teri yaad*\n*Group mein aata/aati hoon - teri yaad*\n*Sona chahta/chahti hoon - teri yaad*\n\nTu hai hi aisi/aisa, bhoolna mushkil hai!"* 😭💖`
+    `🥺 *YAAD AATA HAI...* 🥺\n\nTum jab ${t} ki\nyaad aati hai toh:\n\n🌙 Raat ko: *Neend nahi aati*\n☀️ Din mein: *Kuch accha nahi lagta*\n📱 Phone pe: *Baar baar unka naam dhundha*\n🎵 Gaana suna: *Unhe yaad kiya*\n🌧️ Baarish: *Aur zyada yaad aaye*\n\n*"Teri yaad aati hai jab tujhe bhoolna chahta/chahti hoon!"* 💔😂`,
+    `🥺 *MISSING YOU LEVEL: 9999* 🥺\n\n${t} ki Tum ko\nkitni yaad aati hai:\n\n*"Chai peeta/peeti hoon - teri yaad*\n*Gaana sunta/sunti hoon - teri yaad*\n*Group mein aata/aati hoon - teri yaad*\n*Sona chahta/chahti hoon - teri yaad*\n\nTu hai hi aisi/aisa, bhoolna mushkil hai!"* 😭💖`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: msgs[Math.floor(Math.random() * msgs.length)], 
-    mentions: [sender, target.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -318,16 +313,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🤦 *TAUBA TAUBA!* 🤦\n\n@${sender.split("@")[0]} ne aaj 10vi baar kasam khayi:\n\n*"@${target.id.split("@")[0]} ke baare mein ab nahi sochna!"*\n\nAur 10vi baar fail ho gaye/gayi! 😂\n\n*Time: 3 baje raat*\n*Kaam: Unki purani chats padh raha/rahi tha/thi*\n\nYeh pyaar nahi addiction hai bhai/behan! 😭💀\n\nAllah madad kare! 🙏`,
-    mentions: [sender, target.id]
+    text: `🤦 *TAUBA TAUBA!* 🤦\n\nTum ne aaj 10vi baar kasam khayi:\n\n*"${t} ke baare mein ab nahi sochna!"*\n\nAur 10vi baar fail ho gaye/gayi! 😂\n\n*Time: 3 baje raat*\n*Kaam: Unki purani chats padh raha/rahi tha/thi*\n\nYeh pyaar nahi addiction hai bhai/behan! 😭💀\n\nAllah madad kare! 🙏`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -343,16 +335,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🌸 *PEHLI MOHABBAT STORY!* 🌸\n\n@${sender.split("@")[0]} ne bachpan mein\n@${target.id.split("@")[0]} se pyaar kiya!\n\n*"Unhe dekhne ke liye class late jaata/jaati tha/thi,\nUnka naam notebook pe likhta/likhti tha/thi,\nUnke ghar ke bahar se guzrna bahana tha,\nYeh pehla pyaar tha... sachcha, saada!"*\n\nAb sach batao dono! 😂💕`,
-    mentions: [sender, target.id]
+    text: `🌸 *PEHLI MOHABBAT STORY!* 🌸\n\nTum ne bachpan mein\n${t} se pyaar kiya!\n\n*"Unhe dekhne ke liye class late jaata/jaati tha/thi,\nUnka naam notebook pe likhta/likhti tha/thi,\nUnke ghar ke bahar se guzrna bahana tha,\nYeh pehla pyaar tha... sachcha, saada!"*\n\nAb sach batao dono! 😂💕`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -369,16 +358,15 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const score = Math.floor(Math.random() * 100) + 1;
   
   await conn.sendMessage(mek.chat, {
-    text: `🎭 *WAFA KA IMTIHAAN* 🎭\n\n@${target.id.split("@")[0]} ka wafa score:\n\n*${score}/100* ${score > 80 ? "💯 - *WAFADAR INSAAN!*\n\nYeh banda/bandi jannat ka haqdar/haqdar hai!\nAise insaan milte nahi aajkal! 🥺❤️" : score > 50 ? "😊 - *THEEK THEEK WAFADAR!*\n\nKuch chances hain improve karne ke! 😂" : "😅 - *JARA KAM WAFADAR!*\n\nBhai behen miyan biwi wala scene hai! 💀😂"}`,
-    mentions: [target.id]
+    text: `🎭 *WAFA KA IMTIHAAN* 🎭\n\n${t} ka wafa score:\n\n*${score}/100* ${score > 80 ? "💯 - *WAFADAR INSAAN!*\n\nYeh banda/bandi jannat ka haqdar/haqdar hai!\nAise insaan milte nahi aajkal! 🥺❤️" : score > 50 ? "😊 - *THEEK THEEK WAFADAR!*\n\nKuch chances hain improve karne ke! 😂" : "😅 - *JARA KAM WAFADAR!*\n\nBhai behen miyan biwi wala scene hai! 💀😂"}`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -394,21 +382,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const partner = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const stories = [
-    `📖 *DONO KI KAHANI* 📖\n\n*Chapter 1:* @${sender.split("@")[0]} ne @${partner.id.split("@")[0]} ki DP dekhi - Dil ruk gaya! 😍\n\n*Chapter 2:* Group mein ek dusre ke jokes pe hasne lage - Dosti shuru! 😂\n\n*Chapter 3:* DM pe baatein hone lagin - *"Sirf dost hain!"* 🙄\n\n*Chapter 4:* Raat ke 3 baje tak baatein - *"Haan sirf dost..."* 😂💀\n\n*Chapter 5:* Aaj bhi ek doosre se milne ka intzaar!\n\n*End: To be continued...* 💕`,
-    `📖 *PYAARI KAHANI!* 📖\n\n*@${sender.split("@")[0]} + @${partner.id.split("@")[0]}*\n\nEk baar group mein dono online the,\nEk ne funny meme bheja,\nDoosra hansa,\nPhir baatein shuru huyin,\n\nAaj bhi yahi hota hai...\nBaar baar...\nRoz Roz...\n\n*"Kuch keh dete dono, group wait kar raha hai!"* 😂❤️`
+    `📖 *DONO KI KAHANI* 📖\n\n*Chapter 1:* Tum ne ${t} ki DP dekhi - Dil ruk gaya! 😍\n\n*Chapter 2:* Group mein ek dusre ke jokes pe hasne lage - Dosti shuru! 😂\n\n*Chapter 3:* DM pe baatein hone lagin - *"Sirf dost hain!"* 🙄\n\n*Chapter 4:* Raat ke 3 baje tak baatein - *"Haan sirf dost..."* 😂💀\n\n*Chapter 5:* Aaj bhi ek doosre se milne ka intzaar!\n\n*End: To be continued...* 💕`,
+    `📖 *PYAARI KAHANI!* 📖\n\n*Tum + ${t}*\n\nEk baar group mein dono online the,\nEk ne funny meme bheja,\nDoosra hansa,\nPhir baatein shuru huyin,\n\nAaj bhi yahi hota hai...\nBaar baar...\nRoz Roz...\n\n*"Kuch keh dete dono, group wait kar raha hai!"* 😂❤️`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: stories[Math.floor(Math.random() * stories.length)], 
-    mentions: [sender, partner.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -424,21 +409,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const receiver = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const msgs = [
-    `🌹 *GULAB BHEJA GAYA!* 🌹\n\n@${sender.split("@")[0]} ne @${receiver.id.split("@")[0]} ko\nbheja ek *LAAL GULAB* 🌹\n\nSath mein likha tha:\n*"Yeh gulab itna sundar nahi,\nJitne tum ho,\nLekin meri taraf se,\nSirf tumhare liye!"* 🥺\n\n*Lene wale kuch jawab do!* 😂💕`,
-    `🌹 *VIRTUAL PHOOL!* 🌹\n\n🌹🌹🌹🌹🌹\n@${receiver.id.split("@")[0]} ke liye\n@${sender.split("@")[0]} ki taraf se!\n🌹🌹🌹🌹🌹\n\n*"Yeh phool murjha jayenge,\nLekin tumhara khayal nahi!"* 😭💖\n\nSabse bada shayar agaya group mein! 😂`
+    `🌹 *GULAB BHEJA GAYA!* 🌹\n\nTum ne ${t} ko\nbheja ek *LAAL GULAB* 🌹\n\nSath mein likha tha:\n*"Yeh gulab itna sundar nahi,\nJitne tum ho,\nLekin meri taraf se,\nSirf tumhare liye!"* 🥺\n\n*Lene wale kuch jawab do!* 😂💕`,
+    `🌹 *VIRTUAL PHOOL!* 🌹\n\n🌹🌹🌹🌹🌹\n${t} ke liye\nTum ki taraf se!\n🌹🌹🌹🌹🌹\n\n*"Yeh phool murjha jayenge,\nLekin tumhara khayal nahi!"* 😭💖\n\nSabse bada shayar agaya group mein! 😂`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: msgs[Math.floor(Math.random() * msgs.length)], 
-    mentions: [sender, receiver.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -455,19 +437,18 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const taarifs = [
-    `👁️ *AANKHON KI TAARIF!* 👁️\n\n@${target.id.split("@")[0]} ki aankhein:\n\n*"Do sitare zameen pe utar aaye hain,\nIn aankhon mein doob ke duniya bhool jaata/jaati hoon,\nJab ye aankhein muskaraati hain,\nToh poori raat roshni ho jaati hai!"* 🌟\n\n*Subhan Allah!* 🥺✨`,
-    `👁️ *NIGAAH!* 👁️\n\n@${target.id.split("@")[0]} ka eyes description:\n\n✨ Deep - Jaise samundar\n🌟 Bright - Jaise sitaare\n💫 Magical - Jaise koi jadu ho\n\n*"Teri aankhon se milti hain aankhein,\nToh duniya ki koi zaroorat nahi!"* 😍\n\nAllah ki khoobsoorat creation! 🙏`
+    `👁️ *AANKHON KI TAARIF!* 👁️\n\n${t} ki aankhein:\n\n*"Do sitare zameen pe utar aaye hain,\nIn aankhon mein doob ke duniya bhool jaata/jaati hoon,\nJab ye aankhein muskaraati hain,\nToh poori raat roshni ho jaati hai!"* 🌟\n\n*Subhan Allah!* 🥺✨`,
+    `👁️ *NIGAAH!* 👁️\n\n${t} ka eyes description:\n\n✨ Deep - Jaise samundar\n🌟 Bright - Jaise sitaare\n💫 Magical - Jaise koi jadu ho\n\n*"Teri aankhon se milti hain aankhein,\nToh duniya ki koi zaroorat nahi!"* 😍\n\nAllah ki khoobsoorat creation! 🙏`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: taarifs[Math.floor(Math.random() * taarifs.length)], 
-    mentions: [target.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -483,21 +464,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const shayaris = [
-    `🎤 *@${sender.split("@")[0]} ne @${target.id.split("@")[0]} ke liye SHAYARI sunai!* 🎤\n\n*"Teri muskaan pe main marta hoon,\nTeri ek baat pe nikharta hoon,\nTu door ho toh dil ghabrata hai,\nTere paas aake chain pata hoon!"*\n\n🎊 Waah Waah! 👏 Kya baat kahi! 🌹`,
-    `🎤 *SHER SUNAO!* 🎤\n\n@${sender.split("@")[0]} bola/boli @${target.id.split("@")[0]} ke liye:\n\n*"Na chai ka nasha, na chai ki mehek,\nTeri baatein hi kaafi hain mujhe jagane ko!\nNa raat ki thandak, na subah ki dhoop,\nTeri ek message hi kaafi hai mujhe khush karne ko!"*\n\n💖 Yeh toh bada hi sach sher tha! 😂🌹`
+    `🎤 *Tum ne ${t} ke liye SHAYARI sunai!* 🎤\n\n*"Teri muskaan pe main marta hoon,\nTeri ek baat pe nikharta hoon,\nTu door ho toh dil ghabrata hai,\nTere paas aake chain pata hoon!"*\n\n🎊 Waah Waah! 👏 Kya baat kahi! 🌹`,
+    `🎤 *SHER SUNAO!* 🎤\n\nTum bola/boli ${t} ke liye:\n\n*"Na chai ka nasha, na chai ki mehek,\nTeri baatein hi kaafi hain mujhe jagane ko!\nNa raat ki thandak, na subah ki dhoop,\nTeri ek message hi kaafi hai mujhe khush karne ko!"*\n\n💖 Yeh toh bada hi sach sher tha! 😂🌹`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: shayaris[Math.floor(Math.random() * shayaris.length)], 
-    mentions: [sender, target.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -513,22 +491,19 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const person = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const relation = Math.random() > 0.5 ? "DOST" : "DUSHMAN";
   const msgs = {
-    "DOST": `🤝 *SACHCHA DOST REVEAL!* 🤝\n\n@${person.id.split("@")[0]} tumhara *SACHCHA DOST* hai @${sender.split("@")[0]}!\n\nYeh:\n✅ Tere liye ready rahega/rahegi 24/7\n✅ Secret kabhi nahi batayega/batayegi\n✅ Saath milke roasted karega/karegi doosron ko\n✅ Bure waqt mein saath hoga/hogi\n\n*Aisa dost toh sona hota hai!* 💛`,
-    "DUSHMAN": `😈 *KHABARDAAR!* 😈\n\n@${sender.split("@")[0]} group mein @${person.id.split("@")[0]} se\nbachke rehna!\n\nYeh toh *CHHUPA DUSHMAN* hai! 😂\n\n*"Moonh pe meetha, peeth pe..." you know!* 😅\n\nBs mazaaq hai bhai, sab dost hain! 😂💕`
+    "DOST": `🤝 *SACHCHA DOST REVEAL!* 🤝\n\n${t} tumhara *SACHCHA DOST* hai Tum!\n\nYeh:\n✅ Tere liye ready rahega/rahegi 24/7\n✅ Secret kabhi nahi batayega/batayegi\n✅ Saath milke roasted karega/karegi doosron ko\n✅ Bure waqt mein saath hoga/hogi\n\n*Aisa dost toh sona hota hai!* 💛`,
+    "DUSHMAN": `😈 *KHABARDAAR!* 😈\n\nTum group mein ${t} se\nbachke rehna!\n\nYeh toh *CHHUPA DUSHMAN* hai! 😂\n\n*"Moonh pe meetha, peeth pe..." you know!* 😅\n\nBs mazaaq hai bhai, sab dost hain! 😂💕`
   };
   
   await conn.sendMessage(mek.chat, { 
     text: msgs[relation], 
-    mentions: [sender, person.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -544,21 +519,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const victim = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const msgs = [
-    `😈 *TANG KARNA SHURU!* 😈\n\n@${sender.split("@")[0]} ne @${victim.id.split("@")[0]} ko\n*tang* karne ki kasam khayi!\n\nTareeka:\n📱 Har message pe reply karunga/karungi\n😂 Har joke pe hans lunga/lungi\n👀 Har status pe react karunga/karungi\n💌 Subah sher, raat ko shayari\n\n*"Yeh pyaar nahi tang karna hai!"* 😂💕\nHa ha ha! 😈`,
-    `😈 *CHIDANA SHURU!* 😈\n\n@${victim.id.split("@")[0]} bhai/behan ALERT:\n\n@${sender.split("@")[0]} ne plan banaya hai tumhe\n*pyaar se tang* karne ka! 😂\n\nRoz subah: "Uthho! Good Morning!"\nRoz raat: "Sone ka waqt ho gaya?"\nGrup mein: Har cheez pe mention\n\n*Is tang karne se bachna mushkil hai!* 💀❤️`
+    `😈 *TANG KARNA SHURU!* 😈\n\nTum ne ${t} ko\n*tang* karne ki kasam khayi!\n\nTareeka:\n📱 Har message pe reply karunga/karungi\n😂 Har joke pe hans lunga/lungi\n👀 Har status pe react karunga/karungi\n💌 Subah sher, raat ko shayari\n\n*"Yeh pyaar nahi tang karna hai!"* 😂💕\nHa ha ha! 😈`,
+    `😈 *CHIDANA SHURU!* 😈\n\n${t} bhai/behan ALERT:\n\nTum ne plan banaya hai tumhe\n*pyaar se tang* karne ka! 😂\n\nRoz subah: "Uthho! Good Morning!"\nRoz raat: "Sone ka waqt ho gaya?"\nGrup mein: Har cheez pe mention\n\n*Is tang karne se bachna mushkil hai!* 💀❤️`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: msgs[Math.floor(Math.random() * msgs.length)], 
-    mentions: [sender, victim.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -574,21 +546,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const msgs = [
-    `😊 *SMILE CHURA LI!* 😊\n\n@${sender.split("@")[0]} ne @${target.id.split("@")[0]} ki\n*smile chura li* aaj! 😄\n\n*"Tumhari muskaan dekh ke,\nMera sara din ban jaata hai!\nYeh toh sab se khoobsoorat cheez hai,\nJo mujhe pata hai!"* 🌸\n\nAbhi smile karo tum! 😊`,
-    `😊 *MUSKAAN AWARD!* 😊\n\nAaj ka *"Best Smile in Group"* award\njaata hai @${target.id.split("@")[0]} ko!\n\n*@${sender.split("@")[0]} ki taraf se special mention:*\n"Jab tum muskuraate/muskuraati ho,\ntoh group ki raunaq ho jaati hai!" 🌟\n\nShukriya itni khoobsoorat muskaan ke liye! 💖`
+    `😊 *SMILE CHURA LI!* 😊\n\nTum ne ${t} ki\n*smile chura li* aaj! 😄\n\n*"Tumhari muskaan dekh ke,\nMera sara din ban jaata hai!\nYeh toh sab se khoobsoorat cheez hai,\nJo mujhe pata hai!"* 🌸\n\nAbhi smile karo tum! 😊`,
+    `😊 *MUSKAAN AWARD!* 😊\n\nAaj ka *"Best Smile in Group"* award\njaata hai ${t} ko!\n\n*Tum ki taraf se special mention:*\n"Jab tum muskuraate/muskuraati ho,\ntoh group ki raunaq ho jaati hai!" 🌟\n\nShukriya itni khoobsoorat muskaan ke liye! 💖`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: msgs[Math.floor(Math.random() * msgs.length)], 
-    mentions: [sender, target.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -604,16 +573,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const beloved = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `💗 *JAAN WALA MESSAGE!* 💗\n\n@${sender.split("@")[0]} ne kaha:\n\n*"@${beloved.id.split("@")[0]}... Jaan!"*\n\n😳 @${beloved.id.split("@")[0]} ka reaction:\n\n*Chehra laal...*\n*Dil tez...*\n*Reply ka intezaar...*\n*"Maine kuch suna ya..."* 😂🥺\n\nSab ne suna! Ab reply karo JAAN! 😂💗`,
-    mentions: [sender, beloved.id]
+    text: `💗 *JAAN WALA MESSAGE!* 💗\n\nTum ne kaha:\n\n*"${t}... Jaan!"*\n\n😳 ${t} ka reaction:\n\n*Chehra laal...*\n*Dil tez...*\n*Reply ka intezaar...*\n*"Maine kuch suna ya..."* 😂🥺\n\nSab ne suna! Ab reply karo JAAN! 😂💗`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -629,16 +595,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const fated = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🍀 *QISMAT KA INKISHAAF!* 🍀\n\n@${sender.split("@")[0]} ki qismat mein likha hai:\n\n*@${fated.id.split("@")[0]}!* ✨\n\n*"Na iss ki koshish, na uss ki koshish,\nJo likha tha qismat mein woh aaya!\nYeh dono ka milna toh upar se taya tha!"*\n\n🌟 Allah ki marzi mein hi bhalaai hai! 💫\n\nDono ko mubarak! 🎊💕`,
-    mentions: [sender, fated.id]
+    text: `🍀 *QISMAT KA INKISHAAF!* 🍀\n\nTum ki qismat mein likha hai:\n\n*${t}!* ✨\n\n*"Na iss ki koshish, na uss ki koshish,\nJo likha tha qismat mein woh aaya!\nYeh dono ka milna toh upar se taya tha!"*\n\n🌟 Allah ki marzi mein hi bhalaai hai! 💫\n\nDono ko mubarak! 🎊💕`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -654,21 +617,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const msgs = [
-    `🎭 *JHOOTH KA PARDA HATA!* 🎭\n\n@${sender.split("@")[0]} ne bataya:\n\n*"@${target.id.split("@")[0]} kehta/kehti hai 'Sirf dost hoon!'\nLekin:*\n\n- Subah sabse pehle mujhe text: ✅\n- Raat ko online check karna: ✅\n- Meri har baat yaad rakhna: ✅\n- Birthday yaad rakhna: ✅\n\n*Yeh dosti wali dosti nahi lagti!"* 😂💕`,
-    `🎭 *SACH KYA HAI?!* 🎭\n\n@${target.id.split("@")[0]} kehta/kehti hai:\n*"Hum sirf dost hain!"*\n\nLekin @${sender.split("@")[0]} ka kehna hai:\n*"Agar sirf dost hain,\ntoh raat ko 2 baje sirf dost hi\n'Neend aa rahi hai?' kyun poochhte/poochhhti hain?"*\n\n😂 Poora group sach jaanta hai! 💀❤️`
+    `🎭 *JHOOTH KA PARDA HATA!* 🎭\n\nTum ne bataya:\n\n*"${t} kehta/kehti hai 'Sirf dost hoon!'\nLekin:*\n\n- Subah sabse pehle mujhe text: ✅\n- Raat ko online check karna: ✅\n- Meri har baat yaad rakhna: ✅\n- Birthday yaad rakhna: ✅\n\n*Yeh dosti wali dosti nahi lagti!"* 😂💕`,
+    `🎭 *SACH KYA HAI?!* 🎭\n\n${t} kehta/kehti hai:\n*"Hum sirf dost hain!"*\n\nLekin Tum ka kehna hai:\n*"Agar sirf dost hain,\ntoh raat ko 2 baje sirf dost hi\n'Neend aa rahi hai?' kyun poochhte/poochhhti hain?"*\n\n😂 Poora group sach jaanta hai! 💀❤️`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: msgs[Math.floor(Math.random() * msgs.length)], 
-    mentions: [sender, target.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -706,16 +666,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `💝 *MOHABBAT KA QARZ CHUKAYA!* 💝\n\n@${sender.split("@")[0]} ne @${target.id.split("@")[0]} ko\naaj ek *Khaas Thank You* diya:\n\n*"Tum ne jo ek din mujhe online dekh ke\n'Kya hua?' poochha tha,\nwoh main aaj tak nahi bhool saka/sakti!\nTumhari choti si parwah ne\nzindagi badal di!"* 🥺💝\n\nYeh hai sachchi mohabbat! 😭❤️`,
-    mentions: [sender, target.id]
+    text: `💝 *MOHABBAT KA QARZ CHUKAYA!* 💝\n\nTum ne ${t} ko\naaj ek *Khaas Thank You* diya:\n\n*"Tum ne jo ek din mujhe online dekh ke\n'Kya hua?' poochha tha,\nwoh main aaj tak nahi bhool saka/sakti!\nTumhari choti si parwah ne\nzindagi badal di!"* 🥺💝\n\nYeh hai sachchi mohabbat! 😭❤️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -732,14 +689,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🧿 *NAZAR UTARAO!* 🧿\n\n@${target.id.split("@")[0]} par is group mein\n*bahut buri nazar* lag rahi hai!\n\nKisne lagayi? 👀\n\n🕯️ *Nazar Utarne ka Tarika:*\n\n"Allah Tawakkalt" 3 baar\n+ Durood 3 baar\n+ Group ke tamam logon ko\nchai pilao ek baar! ☕😂\n\n*Sab theek ho jaayega InshAllah!* 🙏\n\n*Yeh sab mazaak hai bhai, asli ilaj doctor!* 😂`,
-    mentions: [target.id]
+    text: `🧿 *NAZAR UTARAO!* 🧿\n\n${t} par is group mein\n*bahut buri nazar* lag rahi hai!\n\nKisne lagayi? 👀\n\n🕯️ *Nazar Utarne ka Tarika:*\n\n"Allah Tawakkalt" 3 baar\n+ Durood 3 baar\n+ Group ke tamam logon ko\nchai pilao ek baar! ☕😂\n\n*Sab theek ho jaayega InshAllah!* 🙏\n\n*Yeh sab mazaak hai bhai, asli ilaj doctor!* 😂`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -755,21 +711,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const co_star = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const dialogues = [
-    `🎬 *FILMI SCENE!* 🎬\n\n@${sender.split("@")[0]} ne dramatic andaaz mein\n@${co_star.id.split("@")[0]} ko dekh ke kaha:\n\n*"Main tujhse mohabbat nahi karta/karti!\n(3 second silence)\nMain tujhse BOHOT mohabbat karta/karti hoon!"*\n\n😂 Seedha Bollywood scene! 🎭\n\nBackground mein violin baj rahi hai! 🎻`,
-    `🎬 *DRAMATIC SCENE!* 🎬\n\n@${sender.split("@")[0]}: "@${co_star.id.split("@")[0]} tumse ek baat kehni thi..."\n@${co_star.id.split("@")[0]}: "Haan bolo..."\n@${sender.split("@")[0]}: "..."\n@${co_star.id.split("@")[0]}: "Kya hua?"\n@${sender.split("@")[0]}: "..."\n\n*Baarish shuru ho gayi dramatically!* 🌧️\n\n*Group: "Bol bhi do yaar!"* 😂💀`
+    `🎬 *FILMI SCENE!* 🎬\n\nTum ne dramatic andaaz mein\n${t} ko dekh ke kaha:\n\n*"Main tujhse mohabbat nahi karta/karti!\n(3 second silence)\nMain tujhse BOHOT mohabbat karta/karti hoon!"*\n\n😂 Seedha Bollywood scene! 🎭\n\nBackground mein violin baj rahi hai! 🎻`,
+    `🎬 *DRAMATIC SCENE!* 🎬\n\nTum: "${t} tumse ek baat kehni thi..."\n${t}: "Haan bolo..."\nTum: "..."\n${t}: "Kya hua?"\nTum: "..."\n\n*Baarish shuru ho gayi dramatically!* 🌧️\n\n*Group: "Bol bhi do yaar!"* 😂💀`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: dialogues[Math.floor(Math.random() * dialogues.length)], 
-    mentions: [sender, co_star.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -786,19 +739,18 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const winner = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const awards = [
-    `🏆 *AASHIQANA AWARD NIGHT!* 🏆\n\nAaj ka *"Sabse Romantic Insaan"* Award\n\n🥁 *...drum roll...*\n\n🎊 @${winner.id.split("@")[0]} ko! 🎊\n\n*"Yeh banda/bandi itna/itni romantic hai ke:\nPhool dekhe - romance\nChaand dekha - romance\nBaarish hui - romance\nChay pi - romance*\n\nYaar tum toh har jagah romance dhoondh lete/leti ho!" 😂❤️`,
-    `🏆 *PYAAR WALA AWARD!* 🏆\n\n*Congratulations @${winner.id.split("@")[0]}!*\n\nTumhe mila hai:\n*"Group Ka Dil Jeetne Wala"* 🥇\n\nKyunki:\n💬 Tumhari baatein - heart touching\n😊 Tumhari muskaan - dil khushkar\n❤️ Tumhari presence - group mein jannat\n\n*Sach mein acha insaan ho tum!* 🌟`
+    `🏆 *AASHIQANA AWARD NIGHT!* 🏆\n\nAaj ka *"Sabse Romantic Insaan"* Award\n\n🥁 *...drum roll...*\n\n🎊 ${t} ko! 🎊\n\n*"Yeh banda/bandi itna/itni romantic hai ke:\nPhool dekhe - romance\nChaand dekha - romance\nBaarish hui - romance\nChay pi - romance*\n\nYaar tum toh har jagah romance dhoondh lete/leti ho!" 😂❤️`,
+    `🏆 *PYAAR WALA AWARD!* 🏆\n\n*Congratulations ${t}!*\n\nTumhe mila hai:\n*"Group Ka Dil Jeetne Wala"* 🥇\n\nKyunki:\n💬 Tumhari baatein - heart touching\n😊 Tumhari muskaan - dil khushkar\n❤️ Tumhari presence - group mein jannat\n\n*Sach mein acha insaan ho tum!* 🌟`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: awards[Math.floor(Math.random() * awards.length)], 
-    mentions: [winner.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -813,7 +765,9 @@ cmd({
   category: "💬 Fun Text",
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
-  const sender = mek.sender;
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const types = [
     `💖 *TUMHARA PYAAR KA TYPE!* 💖\n\n*SILENT LOVER* 🤫\n\nTum pyaar karte/karti ho lekin bolte/bolti nahi!\nBas aankhon se express karte/karti ho!\nStatus lagaate/lagaati ho hint waale!\nAur wait karte/karti ho ke woh samjhe/samjhe!\n\n*"Ek baar seedha bol do yaar!"* 😂💕`,
@@ -823,8 +777,8 @@ cmd({
   ];
   
   await conn.sendMessage(mek.chat, {
-    text: types[Math.floor(Math.random() * types.length)] + `\n\n@${sender.split("@")[0]}`,
-    mentions: [sender]
+    text: types[Math.floor(Math.random() * types.length)] + `\n\nTum`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -840,21 +794,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const msgs = [
-    `💬 *DIL KHOL KE BAT!* 💬\n\n@${sender.split("@")[0]} ne aaj @${target.id.split("@")[0]} ko\n*DIL KHOL KE* bata diya:\n\n*"Yaar tere saath time spend karna,\nMujhe sach mein accha lagta hai!\nNa koi drama, na koi show,\nBas tu ho, toh dil khush ho!"* 🥺\n\nYeh baat sach mein dil se nikli! 💖`,
-    `💬 *SACH BAAT!* 💬\n\n@${sender.split("@")[0]} ka @${target.id.split("@")[0]} ke liye\nkhula sandesa:\n\n*"Main jaanta/jaanti hoon tum bura nahi maanoge/maanogi,\nIsliye kehna chahta/chahti hoon:\nTum bahut ache/achi ho!\nAur main tumhari parwah karta/karti hoon!"*\n\n😭 Yeh group ka sachcha rishta! ❤️`
+    `💬 *DIL KHOL KE BAT!* 💬\n\nTum ne aaj ${t} ko\n*DIL KHOL KE* bata diya:\n\n*"Yaar tere saath time spend karna,\nMujhe sach mein accha lagta hai!\nNa koi drama, na koi show,\nBas tu ho, toh dil khush ho!"* 🥺\n\nYeh baat sach mein dil se nikli! 💖`,
+    `💬 *SACH BAAT!* 💬\n\nTum ka ${t} ke liye\nkhula sandesa:\n\n*"Main jaanta/jaanti hoon tum bura nahi maanoge/maanogi,\nIsliye kehna chahta/chahti hoon:\nTum bahut ache/achi ho!\nAur main tumhari parwah karta/karti hoon!"*\n\n😭 Yeh group ka sachcha rishta! ❤️`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: msgs[Math.floor(Math.random() * msgs.length)], 
-    mentions: [sender, target.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -870,16 +821,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `😠❤️ *GUSSA PYAAR COMBO!* 😠❤️\n\n@${sender.split("@")[0]} ne @${target.id.split("@")[0]} ko kaha:\n\n*"Tum mujhe bahut gussa dilate ho!\n...aur phir bhi main tumhara intezaar karta/karti hoon!\n\nTum late reply karte/karti ho,\n...aur phir bhi mujhe tumse baat karni hoti hai!\n\nTum ignore karte/karti ho,\n...aur phir bhi dil mein tumhi hote/hoti ho!\n\nYeh kya jaadu hai bhai?!"* 😭😂\n\n*Yahi toh sachcha pyaar hai!* 💀❤️`,
-    mentions: [sender, target.id]
+    text: `😠❤️ *GUSSA PYAAR COMBO!* 😠❤️\n\nTum ne ${t} ko kaha:\n\n*"Tum mujhe bahut gussa dilate ho!\n...aur phir bhi main tumhara intezaar karta/karti hoon!\n\nTum late reply karte/karti ho,\n...aur phir bhi mujhe tumse baat karni hoti hai!\n\nTum ignore karte/karti ho,\n...aur phir bhi dil mein tumhi hote/hoti ho!\n\nYeh kya jaadu hai bhai?!"* 😭😂\n\n*Yahi toh sachcha pyaar hai!* 💀❤️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -896,14 +844,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const spy = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🕵️ *JASOOS PAKDA GAYA!* 🕵️\n\n*BREAKING NEWS* 📰\n\nIs group mein ek *CHHUPA JASOOS* tha!\n\nAur woh hai... 🥁\n\n*@${spy.id.split("@")[0]}!* 😱\n\nYeh banda/bandi:\n✅ Sab ki screenshots leta/leti tha/thi\n✅ Group ki sari info store thi\n✅ Doosre groups mein share karta/karti tha/thi\n\n*JK bhai! Sab dost hain!* 😂\n\nMazaak tha, bura mat maano! 💕`,
-    mentions: [spy.id]
+    text: `🕵️ *JASOOS PAKDA GAYA!* 🕵️\n\n*BREAKING NEWS* 📰\n\nIs group mein ek *CHHUPA JASOOS* tha!\n\nAur woh hai... 🥁\n\n*${t}!* 😱\n\nYeh banda/bandi:\n✅ Sab ki screenshots leta/leti tha/thi\n✅ Group ki sari info store thi\n✅ Doosre groups mein share karta/karti tha/thi\n\n*JK bhai! Sab dost hain!* 😂\n\nMazaak tha, bura mat maano! 💕`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -919,16 +866,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const trapped = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🪤 *PYAAR KE PHANDE MEIN!* 🪤\n\n@${trapped.id.split("@")[0]} bhai/behan,\ntum @${sender.split("@")[0]} ke\n*PYAAR KE PHANDE* mein a gaye/gayi ho!\n\nNikalna mushkil hai kyunki:\n\n💬 Unki baatein - nasha hai\n😊 Unki muskaan - chain hai\n📱 Unka message - khushi hai\n🌙 Unka waqt - jannat hai\n\n*Ab nikaalna bhi nahi chahoge/chahogi!* 😂💕\n\nWelcome to the best phanda! ❤️`,
-    mentions: [sender, trapped.id]
+    text: `🪤 *PYAAR KE PHANDE MEIN!* 🪤\n\n${t} bhai/behan,\ntum Tum ke\n*PYAAR KE PHANDE* mein a gaye/gayi ho!\n\nNikalna mushkil hai kyunki:\n\n💬 Unki baatein - nasha hai\n😊 Unki muskaan - chain hai\n📱 Unka message - khushi hai\n🌙 Unka waqt - jannat hai\n\n*Ab nikaalna bhi nahi chahoge/chahogi!* 😂💕\n\nWelcome to the best phanda! ❤️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -967,14 +911,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const drama = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `💅 *NAKHREBAAZ AWARD!* 💅\n\nAaj ka *"Group Ka Sabse Bada Nakhrebaaz"* Award:\n\n🥁 *...TAADAAA...*\n\n@${drama.id.split("@")[0]}! 🎊\n\nYeh:\n💅 "Bas ek minute mein aaya/aayi" = 30 min\n💬 "Koi khaas nahi" = 3 ghante se type kar raha/rahi\n😒 "Theek hoon" = Bilkul theek nahi\n👀 "Mujhe parwah nahi" = Sabse zyada parwah\n\n*Pyaare nakhre hain inke!* 😂❤️`,
-    mentions: [drama.id]
+    text: `💅 *NAKHREBAAZ AWARD!* 💅\n\nAaj ka *"Group Ka Sabse Bada Nakhrebaaz"* Award:\n\n🥁 *...TAADAAA...*\n\n${t}! 🎊\n\nYeh:\n💅 "Bas ek minute mein aaya/aayi" = 30 min\n💬 "Koi khaas nahi" = 3 ghante se type kar raha/rahi\n😒 "Theek hoon" = Bilkul theek nahi\n👀 "Mujhe parwah nahi" = Sabse zyada parwah\n\n*Pyaare nakhre hain inke!* 😂❤️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -990,21 +933,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const loved = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const msgs = [
-    `🌈 *ANOKHA PYAAR!* 🌈\n\n@${sender.split("@")[0]} ka @${loved.id.split("@")[0]} ke liye\nSabse *ANOKHA* pyaar ka izhar:\n\n*"Tum wifi jaiso ho mere liye!\nJab ho toh zindagi smooth,\nJab nahi ho toh kuch kaam nahi karta!\nAur jab signal kamzor ho,\ntoh dil ghabrata hai!"* 📶❤️\n\n*Aaj ka sabse romantic comparison!* 😂💕`,
-    `🌈 *AJAB MOHABBAT!* 🌈\n\n@${sender.split("@")[0]} ne @${loved.id.split("@")[0]} ko compare kiya:\n\n*"Tum mere liye Mobile Battery jaiso ho!\nSubah full charged mil jao,\ntoh poora din khushi khushi guzre!\nKam ho jao toh anxious ho jaata/jaati hoon!\nBilkul drain ho jao toh life ruk jaati hai!"*\n\n*Iss se zyada sachchi mohabbat kya hogi?!* 😂🔋❤️`
+    `🌈 *ANOKHA PYAAR!* 🌈\n\nTum ka ${t} ke liye\nSabse *ANOKHA* pyaar ka izhar:\n\n*"Tum wifi jaiso ho mere liye!\nJab ho toh zindagi smooth,\nJab nahi ho toh kuch kaam nahi karta!\nAur jab signal kamzor ho,\ntoh dil ghabrata hai!"* 📶❤️\n\n*Aaj ka sabse romantic comparison!* 😂💕`,
+    `🌈 *AJAB MOHABBAT!* 🌈\n\nTum ne ${t} ko compare kiya:\n\n*"Tum mere liye Mobile Battery jaiso ho!\nSubah full charged mil jao,\ntoh poora din khushi khushi guzre!\nKam ho jao toh anxious ho jaata/jaati hoon!\nBilkul drain ho jao toh life ruk jaati hai!"*\n\n*Iss se zyada sachchi mohabbat kya hogi?!* 😂🔋❤️`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: msgs[Math.floor(Math.random() * msgs.length)], 
-    mentions: [sender, loved.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -1021,14 +961,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const runner = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🏃 *BHAAG GAYA/GAYI!* 🏃\n\n*ALERT ALERT ALERT!* 🚨\n\nKhabar yeh hai ke @${runner.id.split("@")[0]} ne\nis group se *BHAAGNE* ki koshish ki!\n\nKyu?\n\nShayad:\n😅 Kisi ka crush wali baat pata chal gayi\n😂 Kisi ne unhe tag kar diya jhoothi shayari mein\n💀 Koi unhe publicly propose karne wala tha\n\n*Woh bhaag nahi sakte!\nHum unhe yaad dilaate rahenge!* 😂\n\nWapas aao @${runner.id.split("@")[0]}! ❤️`,
-    mentions: [runner.id]
+    text: `🏃 *BHAAG GAYA/GAYI!* 🏃\n\n*ALERT ALERT ALERT!* 🚨\n\nKhabar yeh hai ke ${t} ne\nis group se *BHAAGNE* ki koshish ki!\n\nKyu?\n\nShayad:\n😅 Kisi ka crush wali baat pata chal gayi\n😂 Kisi ne unhe tag kar diya jhoothi shayari mein\n💀 Koi unhe publicly propose karne wala tha\n\n*Woh bhaag nahi sakte!\nHum unhe yaad dilaate rahenge!* 😂\n\nWapas aao ${t}! ❤️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1045,14 +984,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const lucky = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🌟 *AAJ KA SABSE KHUSH NASEEB!* 🌟\n\n*Stars ne bataya hai ke aaj ka\nsabse KHUSH NASEEB insaan hai:*\n\n✨ @${lucky.id.split("@")[0]} ✨\n\n*Aaj tumhare liye:*\n💰 Rizq mein barkat\n❤️ Pyaar mein khushi\n😊 Khushiyan dobaala\n🌙 Raat chain ki\n☀️ Subah achi\n\n*Mubarak ho!* 🎊\n\nInshAllah! 🤲💫`,
-    mentions: [lucky.id]
+    text: `🌟 *AAJ KA SABSE KHUSH NASEEB!* 🌟\n\n*Stars ne bataya hai ke aaj ka\nsabse KHUSH NASEEB insaan hai:*\n\n✨ ${t} ✨\n\n*Aaj tumhare liye:*\n💰 Rizq mein barkat\n❤️ Pyaar mein khushi\n😊 Khushiyan dobaala\n🌙 Raat chain ki\n☀️ Subah achi\n\n*Mubarak ho!* 🎊\n\nInshAllah! 🤲💫`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1069,14 +1007,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const crybaby = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `😭 *EMOTIONAL AWARD!* 😭\n\nAaj ka *"Sabse Sensitive Dil Wala"* Award:\n\n🎊 @${crybaby.id.split("@")[0]} ko! 🎊\n\nYeh:\n😭 Sad song sune - ro dete/deti hain\n🎬 Movie dekhe - ro dete/deti hain\n📖 Koi sacchi baat kaho - ro dete/deti hain\n🌧️ Baarish dekhe - ro dete/deti hain\n💌 Koi achi baat karo - ro dete/deti hain\n\n*Par yahi sensitive dil sabse\nsundar hota hai!* 🥺❤️\n\nTumhara dil sachcha hai! 💖`,
-    mentions: [crybaby.id]
+    text: `😭 *EMOTIONAL AWARD!* 😭\n\nAaj ka *"Sabse Sensitive Dil Wala"* Award:\n\n🎊 ${t} ko! 🎊\n\nYeh:\n😭 Sad song sune - ro dete/deti hain\n🎬 Movie dekhe - ro dete/deti hain\n📖 Koi sacchi baat kaho - ro dete/deti hain\n🌧️ Baarish dekhe - ro dete/deti hain\n💌 Koi achi baat karo - ro dete/deti hain\n\n*Par yahi sensitive dil sabse\nsundar hota hai!* 🥺❤️\n\nTumhara dil sachcha hai! 💖`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1092,16 +1029,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `⏰ *WAQT GUZARNA - DAILY SCHEDULE!* ⏰\n\n@${target.id.split("@")[0]} ka roz ka routine:\n\n☀️ *Subah:* @${sender.split("@")[0]} ke messages check karo\n🍽️ *Dopahar:* Unki status dekho\n☕ *Shaam:* Unke online hone ka intezaar\n🌙 *Raat:* Unse baatein karo\n💤 *Neend:* Unke baare mein sapne\n\n*Busy schedule hai tumhara!* 😂💕\n\nSach hai ya nahi? Bolo! 👀`,
-    mentions: [sender, target.id]
+    text: `⏰ *WAQT GUZARNA - DAILY SCHEDULE!* ⏰\n\n${t} ka roz ka routine:\n\n☀️ *Subah:* Tum ke messages check karo\n🍽️ *Dopahar:* Unki status dekho\n☕ *Shaam:* Unke online hone ka intezaar\n🌙 *Raat:* Unse baatein karo\n💤 *Neend:* Unke baare mein sapne\n\n*Busy schedule hai tumhara!* 😂💕\n\nSach hai ya nahi? Bolo! 👀`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1118,19 +1052,18 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const beauty = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const msgs = [
-    `🌙 *CHAND SA CHEHRA!* 🌙\n\nAaj @${beauty.id.split("@")[0]} ke liye:\n\n*"Chand bhi sharmata hoga dekh ke,\nSitare bhi jhukate hote nazar,\nAllah ne banaya hai tujhe bahut pyaar se,\nHar nazar mein hai teri ek alag kadar!"* 🥺\n\n*Subhan Allah!* ✨ MashaAllah! 🌟`,
-    `🌙 *MOONLIGHT TAARIF!* 🌙\n\n@${beauty.id.split("@")[0]} ke liye group ka kehna:\n\n*"Raat ke andhere mein jo chand chamke,\nBilkul waise tum group mein aate/aati ho!\nSara andher dil ka mit jaata hai,\nJab tumhara message screen pe aata hai!"*\n\n💖 Sach bol raha/rahi hoon! ❤️`
+    `🌙 *CHAND SA CHEHRA!* 🌙\n\nAaj ${t} ke liye:\n\n*"Chand bhi sharmata hoga dekh ke,\nSitare bhi jhukate hote nazar,\nAllah ne banaya hai tujhe bahut pyaar se,\nHar nazar mein hai teri ek alag kadar!"* 🥺\n\n*Subhan Allah!* ✨ MashaAllah! 🌟`,
+    `🌙 *MOONLIGHT TAARIF!* 🌙\n\n${t} ke liye group ka kehna:\n\n*"Raat ke andhere mein jo chand chamke,\nBilkul waise tum group mein aate/aati ho!\nSara andher dil ka mit jaata hai,\nJab tumhara message screen pe aata hai!"*\n\n💖 Sach bol raha/rahi hoon! ❤️`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: msgs[Math.floor(Math.random() * msgs.length)], 
-    mentions: [beauty.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -1146,22 +1079,19 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const result = Math.random() > 0.5 ? "DILDAR" : "PAKKA DOST";
   const msgs = {
-    "DILDAR": `🤔 *REVEAL TIME!* 🤔\n\n@${sender.split("@")[0]} aur @${target.id.split("@")[0]} ke beech:\n\n*Algorithm ka jawab: DILDAR!* 💘\n\n*"Dono kahte hain sirf dost hain,\nLekin:*\n💬 Baatein ghanton hoti hain\n😊 Dono ek doosre ke liye smile karte hain\n❤️ Ek doosre ki parwah hai\n\n*Yeh dosti ka naam nahi, kuch aur hai!"* 😂`,
-    "PAKKA DOST": `🤔 *REVEAL!* 🤔\n\n@${sender.split("@")[0]} aur @${target.id.split("@")[0]}:\n\n*Result: PAKKA SACHCHA DOST!* 🤝\n\n*"Kuch rishte sirf dosti ke hote hain!\nIsmein koi romance nahi,\nBas ek dil ka gehri dost!\nJo hamesha saath ho!"*\n\n*Yeh dosti barkarar rahe!* 🥂💛`
+    "DILDAR": `🤔 *REVEAL TIME!* 🤔\n\nTum aur ${t} ke beech:\n\n*Algorithm ka jawab: DILDAR!* 💘\n\n*"Dono kahte hain sirf dost hain,\nLekin:*\n💬 Baatein ghanton hoti hain\n😊 Dono ek doosre ke liye smile karte hain\n❤️ Ek doosre ki parwah hai\n\n*Yeh dosti ka naam nahi, kuch aur hai!"* 😂`,
+    "PAKKA DOST": `🤔 *REVEAL!* 🤔\n\nTum aur ${t}:\n\n*Result: PAKKA SACHCHA DOST!* 🤝\n\n*"Kuch rishte sirf dosti ke hote hain!\nIsmein koi romance nahi,\nBas ek dil ka gehri dost!\nJo hamesha saath ho!"*\n\n*Yeh dosti barkarar rahe!* 🥂💛`
   };
   
   await conn.sendMessage(mek.chat, { 
     text: msgs[result], 
-    mentions: [sender, target.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -1177,16 +1107,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `😤 *GALAT FEHMI DRAMA!* 😤\n\n@${sender.split("@")[0]} aur @${target.id.split("@")[0]} ke beech\nAaj ki *BIGGEST GALAT FEHMI:*\n\n@${sender.split("@")[0]}: "Tum mujhe ignore karte/karti ho!"\n@${target.id.split("@")[0]}: "Main busy tha/thi!"\n@${sender.split("@")[0]}: "Par tum online the/thi!"\n@${target.id.split("@")[0]}: "Main... um..."\n\n*GROUP: "Sach bol do dono!"* 😂\n\n*Aur is tarah shuru hoti hai ek filmi kahani!* 🎬❤️`,
-    mentions: [sender, target.id]
+    text: `😤 *GALAT FEHMI DRAMA!* 😤\n\nTum aur ${t} ke beech\nAaj ki *BIGGEST GALAT FEHMI:*\n\nTum: "Tum mujhe ignore karte/karti ho!"\n${t}: "Main busy tha/thi!"\nTum: "Par tum online the/thi!"\n${t}: "Main... um..."\n\n*GROUP: "Sach bol do dono!"* 😂\n\n*Aur is tarah shuru hoti hai ek filmi kahani!* 🎬❤️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1202,16 +1129,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const match = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `💑 *PERFECT MATCH REVEAL!* 💑\n\n*AI + Stars + Algorithm + Dil =*\n\n@${sender.split("@")[0]} ka Perfect Match:\n\n🥁 *...drum roll...*\n\n💘 *@${match.id.split("@")[0]}!* 💘\n\n*Kyu Perfect Match hain?*\n✅ Dono thode pagal hain\n✅ Dono group mein active hain\n✅ Dono ke nakhre compliment hain\n✅ Dono ek doosre ko handle kar sakte hain\n\n*Allah ek kare!* 🤲💕`,
-    mentions: [sender, match.id]
+    text: `💑 *PERFECT MATCH REVEAL!* 💑\n\n*AI + Stars + Algorithm + Dil =*\n\nTum ka Perfect Match:\n\n🥁 *...drum roll...*\n\n💘 *${t}!* 💘\n\n*Kyu Perfect Match hain?*\n✅ Dono thode pagal hain\n✅ Dono group mein active hain\n✅ Dono ke nakhre compliment hain\n✅ Dono ek doosre ko handle kar sakte hain\n\n*Allah ek kare!* 🤲💕`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1228,19 +1152,18 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const person = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const secrets = [
-    `🔓 *RAAZ KHOLA!* 🔓\n\n*@${person.id.split("@")[0]} ka Chhupaaya Hua Raaz:*\n\nYeh shaks group mein kisi ko secretly like karta/karti hai!\n\nEvidence:\n👀 Unke messages carefully padhta/padhti hai\n😊 Unke jokes pe zyada hasta/hasti hai\n📱 Unka online dekh ke active ho jaata/jaati hai\n\n*Naam nahi btaiye, woh khud samjhe!* 😂💕`,
-    `🔓 *SECRET EXPOSE!* 🔓\n\n@${person.id.split("@")[0]} ka woh raaz jo sab jaante hain\nlekin koi bolta nahi:\n\n*"Yeh group admin se zyada group ko sambhalte/sambhalti hain!\nHar member ki parwah karte/karti hain!\nAur chaahte/chaahti hain ke sab khush rahein!"*\n\n💖 *Yeh toh sabse pyaara raaz nikla!* 😭❤️`
+    `🔓 *RAAZ KHOLA!* 🔓\n\n*${t} ka Chhupaaya Hua Raaz:*\n\nYeh shaks group mein kisi ko secretly like karta/karti hai!\n\nEvidence:\n👀 Unke messages carefully padhta/padhti hai\n😊 Unke jokes pe zyada hasta/hasti hai\n📱 Unka online dekh ke active ho jaata/jaati hai\n\n*Naam nahi btaiye, woh khud samjhe!* 😂💕`,
+    `🔓 *SECRET EXPOSE!* 🔓\n\n${t} ka woh raaz jo sab jaante hain\nlekin koi bolta nahi:\n\n*"Yeh group admin se zyada group ko sambhalte/sambhalti hain!\nHar member ki parwah karte/karti hain!\nAur chaahte/chaahti hain ke sab khush rahein!"*\n\n💖 *Yeh toh sabse pyaara raaz nikla!* 😭❤️`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: secrets[Math.floor(Math.random() * secrets.length)], 
-    mentions: [person.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -1256,19 +1179,16 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const level = Math.floor(Math.random() * 10) + 1;
   const labels = ["💔 Zero", "😐 Dost Jaisa", "🙂 Thoda Pyaar", "😊 Kaafi Pyaar", "😍 Deep Pyaar", "🥰 Bohot Gehra", "💖 Dil Mein Ghar", "❤️ Sachcha Pyaar", "💘 Pagal Deewana", "💯 ISHQ MEIN DOOBA!"];
   
   await conn.sendMessage(mek.chat, {
-    text: `📊 *MOHABBAT KA DARJAA* 📊\n\n@${sender.split("@")[0]} aur @${target.id.split("@")[0]}\nke darmiyan pyaar ka level:\n\n*${level}/10 - ${labels[level - 1]}*\n\n${"🔴".repeat(level)}${"⚪".repeat(10 - level)}\n\n${level >= 8 ? "😂 *Bhai/behan yeh toh seedha heart attack!*\nDoctor ko dikhao pehle! 💀" : level >= 5 ? "💕 *Kaafi accha connection hai!*\nThoda aur kaam karo! 😊" : "😅 *Thodi friendship aur ki zaroorat hai!*\nKaam karo iss par! 💪"}`,
-    mentions: [sender, target.id]
+    text: `📊 *MOHABBAT KA DARJAA* 📊\n\nTum aur ${t}\nke darmiyan pyaar ka level:\n\n*${level}/10 - ${labels[level - 1]}*\n\n${"🔴".repeat(level)}${"⚪".repeat(10 - level)}\n\n${level >= 8 ? "😂 *Bhai/behan yeh toh seedha heart attack!*\nDoctor ko dikhao pehle! 💀" : level >= 5 ? "💕 *Kaafi accha connection hai!*\nThoda aur kaam karo! 😊" : "😅 *Thodi friendship aur ki zaroorat hai!*\nKaam karo iss par! 💪"}`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1284,21 +1204,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const blessed = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const duas = [
-    `🤲 *DIL SE DUA!* 🤲\n\n@${sender.split("@")[0]} ki taraf se @${blessed.id.split("@")[0]} ke liye:\n\n*"Allah tujhe khush rakhe hamesha!\nTere dil ki har khaahish poori kare!\nTere pyaron ko tere paas rakhe!\nAur teri zindagi mein sirf khushiyan aayein!"*\n\nAmeen! 🌸 Ya Rabb! 🤲\n\nSach mein pyaari dua! 💖`,
-    `🤲 *KHAAS DUA!* 🤲\n\n@${sender.split("@")[0]} ne @${blessed.id.split("@")[0]} ke liye\nmaanga dua mein:\n\n*"Yaa Allah, is insaan ko woh sab de\nJo main in ke liye maangta/maangti hoon!\nInhein khushiyan do, sehat do, pyaar do!\nAur ek aisi zindagi do jo ise khawhish thi!"*\n\nAmeen Sum Ameen! 🌺🤲`
+    `🤲 *DIL SE DUA!* 🤲\n\nTum ki taraf se ${t} ke liye:\n\n*"Allah tujhe khush rakhe hamesha!\nTere dil ki har khaahish poori kare!\nTere pyaron ko tere paas rakhe!\nAur teri zindagi mein sirf khushiyan aayein!"*\n\nAmeen! 🌸 Ya Rabb! 🤲\n\nSach mein pyaari dua! 💖`,
+    `🤲 *KHAAS DUA!* 🤲\n\nTum ne ${t} ke liye\nmaanga dua mein:\n\n*"Yaa Allah, is insaan ko woh sab de\nJo main in ke liye maangta/maangti hoon!\nInhein khushiyan do, sehat do, pyaar do!\nAur ek aisi zindagi do jo ise khawhish thi!"*\n\nAmeen Sum Ameen! 🌺🤲`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: duas[Math.floor(Math.random() * duas.length)], 
-    mentions: [sender, blessed.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -1314,21 +1231,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const dreamed = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const msgs = [
-    `💭 *SAPNE WALA SCENE!* 💭\n\n*Kal Raat Ka Sapna Report:*\n\n@${sender.split("@")[0]} ke sapne mein\n@${dreamed.id.split("@")[0]} aaye/aayi! 😍\n\nSapne mein:\n🌸 Dono ek park mein the\n🌅 Sunset dekh rahe the saath\n💬 Ghanton baatein ki\n😊 Haste haste baatein\n\n*Subah aankhein khuli toh reality mein woh nahi the/thi!*\n*"Ek message toh karo yaar!"* 🥺😂`,
-    `💭 *SAPNA REVEAL!* 💭\n\n@${dreamed.id.split("@")[0]} tum jaante/jaanti ho?\n\n@${sender.split("@")[0]} ke roz ke sapne mein\nTum hote/hoti ho! 😳\n\n*"Sapne mein tum much kuch bolte/bolti ho\nJo reality mein bolna chahte/chahti hoon!"* 🥺\n\nKoi jawab do bhai/behan! 😂💕`
+    `💭 *SAPNE WALA SCENE!* 💭\n\n*Kal Raat Ka Sapna Report:*\n\nTum ke sapne mein\n${t} aaye/aayi! 😍\n\nSapne mein:\n🌸 Dono ek park mein the\n🌅 Sunset dekh rahe the saath\n💬 Ghanton baatein ki\n😊 Haste haste baatein\n\n*Subah aankhein khuli toh reality mein woh nahi the/thi!*\n*"Ek message toh karo yaar!"* 🥺😂`,
+    `💭 *SAPNA REVEAL!* 💭\n\n${t} tum jaante/jaanti ho?\n\nTum ke roz ke sapne mein\nTum hote/hoti ho! 😳\n\n*"Sapne mein tum much kuch bolte/bolti ho\nJo reality mein bolna chahte/chahti hoon!"* 🥺\n\nKoi jawab do bhai/behan! 😂💕`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: msgs[Math.floor(Math.random() * msgs.length)], 
-    mentions: [sender, dreamed.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -1356,19 +1270,18 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const lonely = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const msgs = [
-    `🙃 AKELA AWARD 2025! 🙃\n\nIs saal ka "Officially Single" Award:\n\n🥁 @${lonely.id.split("@")[0]} 🥁\n\nDaily Routine:\n📱 Subah uthke memes dekho\n☕ Akele chai piyo\n💬 Group mein bakwaas karo\n🌙 Raat ko akele so jao\n\n"Koi baat nahi yaar, ek din zaroor milega/milegi tujhe!"\n\nAbhi ke liye: PIZZA IS LOVE! 🍕😂`,
-    `🙃 SINGLE HALL OF FAME! 🙃\n\n@${lonely.id.split("@")[0]} ne is saal ka\nAKELA CHAMPION title jeeta!\n\n"Na koi propose kiya, na koi mila,\nBas group mein online raha/rahi,\nAur khud se hi hassta/hassti raha/rahi!"\n\n💪 Self love is the best love! 😂❤️`
+    `🙃 AKELA AWARD 2025! 🙃\n\nIs saal ka "Officially Single" Award:\n\n🥁 ${t} 🥁\n\nDaily Routine:\n📱 Subah uthke memes dekho\n☕ Akele chai piyo\n💬 Group mein bakwaas karo\n🌙 Raat ko akele so jao\n\n"Koi baat nahi yaar, ek din zaroor milega/milegi tujhe!"\n\nAbhi ke liye: PIZZA IS LOVE! 🍕😂`,
+    `🙃 SINGLE HALL OF FAME! 🙃\n\n${t} ne is saal ka\nAKELA CHAMPION title jeeta!\n\n"Na koi propose kiya, na koi mila,\nBas group mein online raha/rahi,\nAur khud se hi hassta/hassti raha/rahi!"\n\n💪 Self love is the best love! 😂❤️`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: msgs[Math.floor(Math.random() * msgs.length)], 
-    mentions: [lonely.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -1384,21 +1297,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const traitor = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const msgs = [
-    `🗡️ BEWAFA ALERT! 🗡️\n\n@${sender.split("@")[0]} ne @${traitor.id.split("@")[0]} ke baare mein bataya:\n\n"Maine sab kuch kiya unke liye!\nOnline raha, message kiya, react kiya!\nAur inhone kya kiya?\n\nDOOSRE GROUP MEIN CHALE GAYE! 😭\n\nYeh BEWAFAI hai ya nahi?!" 😤💔\n\nGroup ki support chahiye! 😂`,
-    `🗡️ DHOKA TIME! 🗡️\n\n@${traitor.id.split("@")[0]} ne @${sender.split("@")[0]} ko\nDHOKA diya!\n\nKaise?\n"Unhone mera meme dekha,\nLekin react nahi kiya!\nYeh chota dhoka nahi,\nYEH BETRAYAL HAI!" 😭😂\n\nSabse chota lekin sabse dard wala dhoka! 💀❤️`
+    `🗡️ BEWAFA ALERT! 🗡️\n\nTum ne ${t} ke baare mein bataya:\n\n"Maine sab kuch kiya unke liye!\nOnline raha, message kiya, react kiya!\nAur inhone kya kiya?\n\nDOOSRE GROUP MEIN CHALE GAYE! 😭\n\nYeh BEWAFAI hai ya nahi?!" 😤💔\n\nGroup ki support chahiye! 😂`,
+    `🗡️ DHOKA TIME! 🗡️\n\n${t} ne Tum ko\nDHOKA diya!\n\nKaise?\n"Unhone mera meme dekha,\nLekin react nahi kiya!\nYeh chota dhoka nahi,\nYEH BETRAYAL HAI!" 😭😂\n\nSabse chota lekin sabse dard wala dhoka! 💀❤️`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: msgs[Math.floor(Math.random() * msgs.length)], 
-    mentions: [sender, traitor.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -1414,16 +1324,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const cause = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `😵 CHAKKAR AA GAYA! 😵\n\n@${sender.split("@")[0]} ko @${cause.id.split("@")[0]} ki wajah se\nchakkar aa gaya!\n\nDoctors ne bataya reason:\n\n🩺 Diagnosis: Mohabbat ka Virus\n\nSymptoms:\n🔄 Inka naam aaye - chakkar\n📱 Inka message aaye - chakkar\n👁️ Inhe dekho - zyada chakkar\n💬 Inse baat karo - hospital!\n\nKoi dawai nahi is bimari ki!\nBas woh hi theek kar sakte/sakti hain! 😂💘`,
-    mentions: [sender, cause.id]
+    text: `😵 CHAKKAR AA GAYA! 😵\n\nTum ko ${t} ki wajah se\nchakkar aa gaya!\n\nDoctors ne bataya reason:\n\n🩺 Diagnosis: Mohabbat ka Virus\n\nSymptoms:\n🔄 Inka naam aaye - chakkar\n📱 Inka message aaye - chakkar\n👁️ Inhe dekho - zyada chakkar\n💬 Inse baat karo - hospital!\n\nKoi dawai nahi is bimari ki!\nBas woh hi theek kar sakte/sakti hain! 😂💘`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1439,21 +1346,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const fool = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const pranks = [
-    `🦉 ULLU BANANA SHURU! 🦉\n\n@${fool.id.split("@")[0]} bhai/behan!\n\nKHAAS KHABAR: Tumhare baare mein ek bahut important announcement ane wali hai group mein!\n\n...\n\n...\n\n...\n\nWOH YEH HAI KE TUM DUNYA KE SABSE BADE ULLU HO! 😂🦉\n\n@${sender.split("@")[0]} ne bana diya! April Fool! 😂💕`,
-    `🦉 PRANK SUCCESSFUL! 🦉\n\n@${sender.split("@")[0]} ne @${fool.id.split("@")[0]} ko\nbana diya aaj ka ULLU! 🦉\n\n@${fool.id.split("@")[0]}: "Kya hua? Kya hua?"\n\nGroup: "HAHAHAHA!" 😂\n\nYeh pyaar bhari chherhna hai! ❤️😂`
+    `🦉 ULLU BANANA SHURU! 🦉\n\n${t} bhai/behan!\n\nKHAAS KHABAR: Tumhare baare mein ek bahut important announcement ane wali hai group mein!\n\n...\n\n...\n\n...\n\nWOH YEH HAI KE TUM DUNYA KE SABSE BADE ULLU HO! 😂🦉\n\nTum ne bana diya! April Fool! 😂💕`,
+    `🦉 PRANK SUCCESSFUL! 🦉\n\nTum ne ${t} ko\nbana diya aaj ka ULLU! 🦉\n\n${t}: "Kya hua? Kya hua?"\n\nGroup: "HAHAHAHA!" 😂\n\nYeh pyaar bhari chherhna hai! ❤️😂`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: pranks[Math.floor(Math.random() * pranks.length)], 
-    mentions: [sender, fool.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -1469,16 +1373,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const star = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `👏 TAALI BAJAO SABB! 👏\n\n@${sender.split("@")[0]} ne @${star.id.split("@")[0]} ke liye\nStanding Ovation diya!\n\nKyun?\n\n✅ Is insaan ne group ko zinda rakha\n✅ Sab se milke baat ki\n✅ Kabhi kisi ko ignore nahi kiya\n✅ Group ka asli hero/heroine hai yeh!\n\n👏👏👏👏👏👏👏👏👏👏\n\nSab milke taali bajao! 🎊`,
-    mentions: [sender, star.id]
+    text: `👏 TAALI BAJAO SABB! 👏\n\nTum ne ${t} ke liye\nStanding Ovation diya!\n\nKyun?\n\n✅ Is insaan ne group ko zinda rakha\n✅ Sab se milke baat ki\n✅ Kabhi kisi ko ignore nahi kiya\n✅ Group ka asli hero/heroine hai yeh!\n\n👏👏👏👏👏👏👏👏👏👏\n\nSab milke taali bajao! 🎊`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1494,16 +1395,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const sleepthief = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `😴 NEEND URAI REPORT! 😴\n\n@${sender.split("@")[0]} ki neend ka thief:\n\n@${sleepthief.id.split("@")[0]} 🦹\n\nKaise:\n🌙 Raat 12 baje: Unka khayal\n🌙 Raat 1 baje: Unki purani chats\n🌙 Raat 2 baje: Unka status recheck\n🌙 Raat 3 baje: "Kya woh mujhe pasand karte/karti hain?!"\n🌙 Subah 6 baje: Nind nahi ayi\n\nYeh neend ka thief nahi,\nDil ka thief hai! 😭😂💕`,
-    mentions: [sender, sleepthief.id]
+    text: `😴 NEEND URAI REPORT! 😴\n\nTum ki neend ka thief:\n\n${t} 🦹\n\nKaise:\n🌙 Raat 12 baje: Unka khayal\n🌙 Raat 1 baje: Unki purani chats\n🌙 Raat 2 baje: Unka status recheck\n🌙 Raat 3 baje: "Kya woh mujhe pasand karte/karti hain?!"\n🌙 Subah 6 baje: Nind nahi ayi\n\nYeh neend ka thief nahi,\nDil ka thief hai! 😭😂💕`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1520,14 +1418,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const spicy = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🌶️ CHATPATA AWARD! 🌶️\n\nGroup ka Sabse Chatpata Insaan:\n\n@${spicy.id.split("@")[0]} 🏆\n\nPersonality Report:\n🌶️ Baatein - Chatpati\n🔥 Jawab - Teekha\n😏 Andaaz - Masaledar\n💯 Humor - Extra chatpata\n\n"Yeh insaan bland nahi!\nHar baat mein flavor hai!"\n\nAise log group ki jaan hote hain! ❤️🌶️`,
-    mentions: [spicy.id]
+    text: `🌶️ CHATPATA AWARD! 🌶️\n\nGroup ka Sabse Chatpata Insaan:\n\n${t} 🏆\n\nPersonality Report:\n🌶️ Baatein - Chatpati\n🔥 Jawab - Teekha\n😏 Andaaz - Masaledar\n💯 Humor - Extra chatpata\n\n"Yeh insaan bland nahi!\nHar baat mein flavor hai!"\n\nAise log group ki jaan hote hain! ❤️🌶️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1543,17 +1440,14 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const waitfor = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   const mins = Math.floor(Math.random() * 300) + 10;
   
   await conn.sendMessage(mek.chat, {
-    text: `⏳ WAITING ROOM REPORT ⏳\n\n@${sender.split("@")[0]} pichle ${mins} minutes se\n@${waitfor.id.split("@")[0]} ka reply wait kar raha/rahi hai!\n\nDouble tick status: ✅✅ (SEEN!)\n\nPhir bhi reply nahi aaya!\n\nStatus check kiya: 5 baar ✅\nProfile click kiya: 3 baar ✅\nMessage resend ka socha: ✅\nBlock hone ka check kiya: ✅\n\n@${waitfor.id.split("@")[0]} reply karo bhai/behan!\nKoi zinda hai wahaan?! 😭😂`,
-    mentions: [sender, waitfor.id]
+    text: `⏳ WAITING ROOM REPORT ⏳\n\nTum pichle ${mins} minutes se\n${t} ka reply wait kar raha/rahi hai!\n\nDouble tick status: ✅✅ (SEEN!)\n\nPhir bhi reply nahi aaya!\n\nStatus check kiya: 5 baar ✅\nProfile click kiya: 3 baar ✅\nMessage resend ka socha: ✅\nBlock hone ka check kiya: ✅\n\n${t} reply karo bhai/behan!\nKoi zinda hai wahaan?! 😭😂`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1570,14 +1464,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const royal = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `👑 TAJ CEREMONY! 👑\n\nAaj ka KING/QUEEN OF THE GROUP:\n\n✨ @${royal.id.split("@")[0]} ✨\n\nRoyal Qualities:\n👑 Baatein - Khaandaani\n🌟 Presence - Shahi\n💫 Style - Alag hi level\n❤️ Dil - Sona\n\n"Poori group unki praja hai!\nHum sab bow down karte hain!" 😂👑\n\nLong live the King/Queen! 🎊`,
-    mentions: [royal.id]
+    text: `👑 TAJ CEREMONY! 👑\n\nAaj ka KING/QUEEN OF THE GROUP:\n\n✨ ${t} ✨\n\nRoyal Qualities:\n👑 Baatein - Khaandaani\n🌟 Presence - Shahi\n💫 Style - Alag hi level\n❤️ Dil - Sona\n\n"Poori group unki praja hai!\nHum sab bow down karte hain!" 😂👑\n\nLong live the King/Queen! 🎊`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1594,14 +1487,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const naughty = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `😈 LAFANGAA AWARD! 😈\n\nGroup ka Official LAFANGAA title:\n\n@${naughty.id.split("@")[0]} ko! 🏆\n\nInn ki sharaatein:\n😈 Seedha jawab kabhi nahi dete/deti\n😂 Baatein ghumaate/ghumaati hain\n🤣 Har cheez mein fun dhundh lete/leti hain\n😏 Serious scene mein bhi haste/hasti hain\n\nPar yahi lafangapan toh group ki jaan hai!\n\nKeep being you! 😂❤️`,
-    mentions: [naughty.id]
+    text: `😈 LAFANGAA AWARD! 😈\n\nGroup ka Official LAFANGAA title:\n\n${t} ko! 🏆\n\nInn ki sharaatein:\n😈 Seedha jawab kabhi nahi dete/deti\n😂 Baatein ghumaate/ghumaati hain\n🤣 Har cheez mein fun dhundh lete/leti hain\n😏 Serious scene mein bhi haste/hasti hain\n\nPar yahi lafangapan toh group ki jaan hai!\n\nKeep being you! 😂❤️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1618,14 +1510,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const sweet = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🍫 CHOCOLATE WALA INSAAN! 🍫\n\nGroup ka Sabse Meetha Insaan:\n\n@${sweet.id.split("@")[0]} 🍬\n\nKyu?\n\n🍫 Unki baatein - chocolate si meethi\n🍬 Unka behavior - candy sa pyaara\n🧁 Unka dil - cake sa naram\n🍰 Unki muskaan - dessert sa lajawab\n\n"Is insaan ke saath time spend karna\nDil ko khush kar jaata hai!"\n\nMashaAllah! ✨❤️`,
-    mentions: [sweet.id]
+    text: `🍫 CHOCOLATE WALA INSAAN! 🍫\n\nGroup ka Sabse Meetha Insaan:\n\n${t} 🍬\n\nKyu?\n\n🍫 Unki baatein - chocolate si meethi\n🍬 Unka behavior - candy sa pyaara\n🧁 Unka dil - cake sa naram\n🍰 Unki muskaan - dessert sa lajawab\n\n"Is insaan ke saath time spend karna\nDil ko khush kar jaata hai!"\n\nMashaAllah! ✨❤️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1642,14 +1533,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const interrupter = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `✂️ BAAT KAATNE KA AWARD! ✂️\n\nGroup ka Sabse Baat Kaatne Wala/Wali:\n\n@${interrupter.id.split("@")[0]} 🏆\n\nScenario:\n\nKoi: "Yaar main batana chahta/chahti tha/thi ke aaj..."\n@${interrupter.id.split("@")[0]}: "ARE BHAI/BEHAN MERI SUNO!" 😂\n\nKoi: "Haan toh main keh raha/rahi tha/thi..."\n@${interrupter.id.split("@")[0]}: "WAISE MUJHE BHI EK BAAT YAAD AAYI!"\n\nBaat koi puri karta hi nahi in ke saath! 😂❤️`,
-    mentions: [interrupter.id]
+    text: `✂️ BAAT KAATNE KA AWARD! ✂️\n\nGroup ka Sabse Baat Kaatne Wala/Wali:\n\n${t} 🏆\n\nScenario:\n\nKoi: "Yaar main batana chahta/chahti tha/thi ke aaj..."\n${t}: "ARE BHAI/BEHAN MERI SUNO!" 😂\n\nKoi: "Haan toh main keh raha/rahi tha/thi..."\n${t}: "WAISE MUJHE BHI EK BAAT YAAD AAYI!"\n\nBaat koi puri karta hi nahi in ke saath! 😂❤️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1665,18 +1555,15 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   const palats = ["PALAT!", "PALAT!", "PALAT!", "Nahi palte/palti 💔"];
   const result = palats[Math.floor(Math.random() * palats.length)];
   
   await conn.sendMessage(mek.chat, {
-    text: `🔄 PALAT TEST! 🔄\n\n@${sender.split("@")[0]} ja raha/rahi hai...\n\n@${target.id.split("@")[0]} kya palte/palti hain?\n\n🥁 ....\n🥁 ......\n🥁 ........\n\nResult: ${result} ${result.includes("Nahi") ? "\n\n😭 Pyaar tha teri yaad mein!\nBollywood se zyada dukh hua! 💔😂" : "\n\n😍 YESSS! Isliye kehte hain - sachchi mohabbat palti hai!\n\nDDLJ moment! 🎬❤️"}`,
-    mentions: [sender, target.id]
+    text: `🔄 PALAT TEST! 🔄\n\nTum ja raha/rahi hai...\n\n${t} kya palte/palti hain?\n\n🥁 ....\n🥁 ......\n🥁 ........\n\nResult: ${result} ${result.includes("Nahi") ? "\n\n😭 Pyaar tha teri yaad mein!\nBollywood se zyada dukh hua! 💔😂" : "\n\n😍 YESSS! Isliye kehte hain - sachchi mohabbat palti hai!\n\nDDLJ moment! 🎬❤️"}`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1692,22 +1579,19 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const listener = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const songs = [
-    `🎵 DEDICATED SONG! 🎵\n\n@${sender.split("@")[0]} ne @${listener.id.split("@")[0]} ko\nKhaas Taur Pe yeh gaana dedicate kiya:\n\n🎶 "Tujh Mein Rab Dikhta Hai"\n\n"Jab bhi group mein aate/aati ho,\nDil khush ho jaata hai!\nAllah ki khoobsoorat creation ho tum!" 🥺\n\nDil se! ❤️🎵`,
-    `🎵 SONG DEDICATION! 🎵\n\n@${sender.split("@")[0]} ki taraf se @${listener.id.split("@")[0]} ke liye:\n\n🎶 "Pehla Nasha" 🎶\n\n"Pehla Nasha, Pehla Khumar,\nNaya Pyaar Hai, Naya Intezaar!"\n\nYeh gaana sirf tumhare liye! 🌹😂`,
-    `🎵 SPECIAL DEDICATION! 🎵\n\n@${listener.id.split("@")[0]} ke liye @${sender.split("@")[0]} ne bheja:\n\n🎶 "Teri Meri Prem Kahani" 🎶\n\nSunna? Dil se sunna! 💕\nBaaki group ko bhi wait hai tumhara reaction dekhne ka! 😂`
+    `🎵 DEDICATED SONG! 🎵\n\nTum ne ${t} ko\nKhaas Taur Pe yeh gaana dedicate kiya:\n\n🎶 "Tujh Mein Rab Dikhta Hai"\n\n"Jab bhi group mein aate/aati ho,\nDil khush ho jaata hai!\nAllah ki khoobsoorat creation ho tum!" 🥺\n\nDil se! ❤️🎵`,
+    `🎵 SONG DEDICATION! 🎵\n\nTum ki taraf se ${t} ke liye:\n\n🎶 "Pehla Nasha" 🎶\n\n"Pehla Nasha, Pehla Khumar,\nNaya Pyaar Hai, Naya Intezaar!"\n\nYeh gaana sirf tumhare liye! 🌹😂`,
+    `🎵 SPECIAL DEDICATION! 🎵\n\n${t} ke liye Tum ne bheja:\n\n🎶 "Teri Meri Prem Kahani" 🎶\n\nSunna? Dil se sunna! 💕\nBaaki group ko bhi wait hai tumhara reaction dekhne ka! 😂`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: songs[Math.floor(Math.random() * songs.length)], 
-    mentions: [sender, listener.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -1723,16 +1607,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const partner = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🤝 HAATH THAMNA SCENE! 🤝\n\n[Dramatic Bollywood scene begins]\n\n@${sender.split("@")[0]} ne @${partner.id.split("@")[0]} ki taraf haath badhaya aur kaha:\n\n"Yeh raaste tanha mushkil hain,\nLekin tumhara haath ho toh\nKoi raah mushkil nahi!\nSaath chaloge/chalogi?" 🥺\n\n[Violin music intensifies] 🎻\n\nBackground mein baarish shuru! 🌧️\n\n@${partner.id.split("@")[0]} kya jawab doge/dogi?! 😂❤️`,
-    mentions: [sender, partner.id]
+    text: `🤝 HAATH THAMNA SCENE! 🤝\n\n[Dramatic Bollywood scene begins]\n\nTum ne ${t} ki taraf haath badhaya aur kaha:\n\n"Yeh raaste tanha mushkil hain,\nLekin tumhara haath ho toh\nKoi raah mushkil nahi!\nSaath chaloge/chalogi?" 🥺\n\n[Violin music intensifies] 🎻\n\nBackground mein baarish shuru! 🌧️\n\n${t} kya jawab doge/dogi?! 😂❤️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1748,16 +1629,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🤐 SILENT TREATMENT ALERT! 🤐\n\n@${sender.split("@")[0]} ne @${target.id.split("@")[0]} ko\nSILENT TREATMENT de raha/rahi hai!\n\nReason: \n"Unhone mera message 4 ghante baad dekha!\nAur SIRF 1 word reply kiya!\n\n'Ok'\n\nOK?! OK?! BAS OK?! 😤\n\nAb @${sender.split("@")[0]} chup rahega/rahegi...\n\n...for 5 minutes...\n\n...phir khud hi baat karega/karegi! 😂💀`,
-    mentions: [sender, target.id]
+    text: `🤐 SILENT TREATMENT ALERT! 🤐\n\nTum ne ${t} ko\nSILENT TREATMENT de raha/rahi hai!\n\nReason: \n"Unhone mera message 4 ghante baad dekha!\nAur SIRF 1 word reply kiya!\n\n'Ok'\n\nOK?! OK?! BAS OK?! 😤\n\nAb Tum chup rahega/rahegi...\n\n...for 5 minutes...\n\n...phir khud hi baat karega/karegi! 😂💀`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1773,16 +1651,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const honored = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🌺 PHOOLON KA HAAR! 🌺\n\n🌸🌹🌺🌻🌼🌷🌸\n\n@${sender.split("@")[0]} ne @${honored.id.split("@")[0]} ko\nPHOOLON KA HAAR pehnaaya!\n\n🌸🌹🌺🌻🌼🌷🌸\n\nSath mein kaha:\n"Yeh haar nahi, meri dua hai!\nHar phool ki tarah khilte raho!\nHar khushbu ki tarah bikharte raho!\nZindagi mein hamesha bahar rahe!"\n\n🌺 Mubarak Ho! 🌺\n\nInshAllah! 🤲💫`,
-    mentions: [sender, honored.id]
+    text: `🌺 PHOOLON KA HAAR! 🌺\n\n🌸🌹🌺🌻🌼🌷🌸\n\nTum ne ${t} ko\nPHOOLON KA HAAR pehnaaya!\n\n🌸🌹🌺🌻🌼🌷🌸\n\nSath mein kaha:\n"Yeh haar nahi, meri dua hai!\nHar phool ki tarah khilte raho!\nHar khushbu ki tarah bikharte raho!\nZindagi mein hamesha bahar rahe!"\n\n🌺 Mubarak Ho! 🌺\n\nInshAllah! 🤲💫`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1798,16 +1673,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const stared = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `👁️‍🗨️ GHOOR KE DEKHNA! 👁️‍🗨️\n\n@${sender.split("@")[0]} aur @${stared.id.split("@")[0]}\nki group mein aankh mili!\n\nTik tik tik...\n\n@${sender.split("@")[0]}: 👀\n@${stared.id.split("@")[0]}: 👀\n@${sender.split("@")[0]}: 👁️\n@${stared.id.split("@")[0]}: 👁️\n\n10 second baad...\n\nDono ne ek waqt mein neeche dekha! 😳\n\nGroup: "OHHHH!" 😂🔥\n\nYeh toh filmi scene tha! ❤️`,
-    mentions: [sender, stared.id]
+    text: `👁️‍🗨️ GHOOR KE DEKHNA! 👁️‍🗨️\n\nTum aur ${t}\nki group mein aankh mili!\n\nTik tik tik...\n\nTum: 👀\n${t}: 👀\nTum: 👁️\n${t}: 👁️\n\n10 second baad...\n\nDono ne ek waqt mein neeche dekha! 😳\n\nGroup: "OHHHH!" 😂🔥\n\nYeh toh filmi scene tha! ❤️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1824,14 +1696,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const excuser = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🙄 BAHAANA KING/QUEEN! 🙄\n\nGroup ka Sabse Zyada Bahaane Wala/Wali:\n\n@${excuser.id.split("@")[0]} 🏆\n\nInke Top Bahane:\n\n🙄 Reply late: "Net nahi tha!"\n🙄 Online nahi: "Phone charge nahi tha!"\n🙄 Nahi aaye: "Light chali gayi thi!"\n🙄 Message nahi padha: "Notification nahi aayi!"\n\nBhai/behan sach to yeh hai ke bus mood nahi tha! 😂💀\n\nHum sab jaante hain! ❤️`,
-    mentions: [excuser.id]
+    text: `🙄 BAHAANA KING/QUEEN! 🙄\n\nGroup ka Sabse Zyada Bahaane Wala/Wali:\n\n${t} 🏆\n\nInke Top Bahane:\n\n🙄 Reply late: "Net nahi tha!"\n🙄 Online nahi: "Phone charge nahi tha!"\n🙄 Nahi aaye: "Light chali gayi thi!"\n🙄 Message nahi padha: "Notification nahi aayi!"\n\nBhai/behan sach to yeh hai ke bus mood nahi tha! 😂💀\n\nHum sab jaante hain! ❤️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1847,21 +1718,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const plans = [
-    `🧩 TARKEEB REVEALED! 🧩\n\n@${sender.split("@")[0]} ka @${target.id.split("@")[0]} ke\ndil mein jagah banane ka SECRET PLAN:\n\nStep 1: Group mein funny message bhejo 😂\nStep 2: Unka react aane par smile karo 😊\nStep 3: DM mein casual baat shuru karo 💬\nStep 4: "Sirf dost hain" kaho 🙄\nStep 5: 3 baje tak baatein karo ✅\nStep 6: Dono ko pata chal jaaye! 💘\n\nYeh plan already chal raha hai! 😂👀`,
-    `🧩 JUGAAD PLAN! 🧩\n\n@${sender.split("@")[0]} ka super secret plan\n@${target.id.split("@")[0]} ke liye:\n\nPhase 1: Unka status like karo - DONE ✅\nPhase 2: Unka meme share karo - DONE ✅\nPhase 3: "Haha" se reply shuru karo - DONE ✅\nPhase 4: Abhi tak ka progress: Pending ⏳\n\nBhai/behan seedha bol do yaar! 😂💕`
+    `🧩 TARKEEB REVEALED! 🧩\n\nTum ka ${t} ke\ndil mein jagah banane ka SECRET PLAN:\n\nStep 1: Group mein funny message bhejo 😂\nStep 2: Unka react aane par smile karo 😊\nStep 3: DM mein casual baat shuru karo 💬\nStep 4: "Sirf dost hain" kaho 🙄\nStep 5: 3 baje tak baatein karo ✅\nStep 6: Dono ko pata chal jaaye! 💘\n\nYeh plan already chal raha hai! 😂👀`,
+    `🧩 JUGAAD PLAN! 🧩\n\nTum ka super secret plan\n${t} ke liye:\n\nPhase 1: Unka status like karo - DONE ✅\nPhase 2: Unka meme share karo - DONE ✅\nPhase 3: "Haha" se reply shuru karo - DONE ✅\nPhase 4: Abhi tak ka progress: Pending ⏳\n\nBhai/behan seedha bol do yaar! 😂💕`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: plans[Math.floor(Math.random() * plans.length)], 
-    mentions: [sender, target.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -1883,14 +1751,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const hider = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🫣 CHHUPII HASSI PAKDI! 🫣\n\n@${hider.id.split("@")[0]} jab bhi kisi khaas ka\nnaam group mein aata hai:\n\nScreen pe: "😐" (Normal face)\nAndar se: "😍😂🥰😭🤭"\n\nAur jab woh message karte/karti hain:\n\nHaath kaanpne lagte hain 😅\nHassi chhupani padti hai 🫣\nBaaad mein screen shot 📸\n\nYeh wala pyaar sabse sundar hai!\nJo chhupaate hain, woh gehra hota hai! 😂💖`,
-    mentions: [hider.id]
+    text: `🫣 CHHUPII HASSI PAKDI! 🫣\n\n${t} jab bhi kisi khaas ka\nnaam group mein aata hai:\n\nScreen pe: "😐" (Normal face)\nAndar se: "😍😂🥰😭🤭"\n\nAur jab woh message karte/karti hain:\n\nHaath kaanpne lagte hain 😅\nHassi chhupani padti hai 🫣\nBaaad mein screen shot 📸\n\nYeh wala pyaar sabse sundar hai!\nJo chhupaate hain, woh gehra hota hai! 😂💖`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1905,14 +1772,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const addict = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `📵 MOBILE BAND KARO! 📵\n\n@${addict.id.split("@")[0]} bhai/behan!\n\nMedical Report:\nTumhara mobile addiction level: CRITICAL 🚨\n\nProof:\n📱 Subah uthke pehla kaam: Mobile check\n🚿 Bathroom mein bhi: Mobile\n🍽️ Khaana khate: Mobile\n🛏️ Sone se pehle: Mobile\n💤 Neend mein bhi: Sapne mein mobile\n\nDOCTOR KA NUSKHA:\nMobile rakho 5 minute ke liye!\nAasman dekhlo! ☁️\n\nKyun? Wahan bhi clouds hain, Instagram nahi! 😂`,
-    mentions: [addict.id]
+    text: `📵 MOBILE BAND KARO! 📵\n\n${t} bhai/behan!\n\nMedical Report:\nTumhara mobile addiction level: CRITICAL 🚨\n\nProof:\n📱 Subah uthke pehla kaam: Mobile check\n🚿 Bathroom mein bhi: Mobile\n🍽️ Khaana khate: Mobile\n🛏️ Sone se pehle: Mobile\n💤 Neend mein bhi: Sapne mein mobile\n\nDOCTOR KA NUSKHA:\nMobile rakho 5 minute ke liye!\nAasman dekhlo! ☁️\n\nKyun? Wahan bhi clouds hain, Instagram nahi! 😂`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1934,14 +1800,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const crazy = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🎓 OFFICIAL CERTIFICATE 🎓\n\n╔══════════════════╗\n║  PAGALPAN AWARD  ║\n╚══════════════════╝\n\nYeh certificate diya jaata hai:\n\n@${crazy.id.split("@")[0]} ko\n\nIs baat ki gawahi mein ke:\n\n✅ Yeh insaan group ka sabse zyada\nsochne wala/wali hai\n✅ Har cheez mein romance dhundhta/dhundhti hai\n✅ Dil hamesha dil ki sunta/sunti hai\n\nSeal: 💘 GROUP OF LOVE 💘\n\nTaareekh: Aaj 😂❤️`,
-    mentions: [crazy.id]
+    text: `🎓 OFFICIAL CERTIFICATE 🎓\n\n╔══════════════════╗\n║  PAGALPAN AWARD  ║\n╚══════════════════╝\n\nYeh certificate diya jaata hai:\n\n${t} ko\n\nIs baat ki gawahi mein ke:\n\n✅ Yeh insaan group ka sabse zyada\nsochne wala/wali hai\n✅ Har cheez mein romance dhundhta/dhundhti hai\n✅ Dil hamesha dil ki sunta/sunti hai\n\nSeal: 💘 GROUP OF LOVE 💘\n\nTaareekh: Aaj 😂❤️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1957,16 +1822,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const wallpaper = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `📲 WALLPAPER REVEAL! 📲\n\nScientific Bluetooth Scan ne bataya:\n\n@${sender.split("@")[0]} ke mobile ki\nSECRET WALLPAPER mein hai:\n\n👉 @${wallpaper.id.split("@")[0]} 👈\n\nProof:\n🔓 Lockscreen: Unki DP 😳\n🏠 Homescreen: Unhi ki tasweer\n⌚ Watch wallpaper: Bhi unhi ka 😂\n\nSach hai ya nahi?!\n@${sender.split("@")[0]} batao! 👀\n\nPoora group jaanna chahta/chahti hai! 😂💖`,
-    mentions: [sender, wallpaper.id]
+    text: `📲 WALLPAPER REVEAL! 📲\n\nScientific Bluetooth Scan ne bataya:\n\nTum ke mobile ki\nSECRET WALLPAPER mein hai:\n\n👉 ${t} 👈\n\nProof:\n🔓 Lockscreen: Unki DP 😳\n🏠 Homescreen: Unhi ki tasweer\n⌚ Watch wallpaper: Bhi unhi ka 😂\n\nSach hai ya nahi?!\nTum batao! 👀\n\nPoora group jaanna chahta/chahti hai! 😂💖`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -1983,16 +1845,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const shuffled = participants.sort(() => 0.5 - Math.random());
-  const p1 = shuffled[0];
-  const p2 = shuffled[1];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `💬 GROUP MATCHMAKER PRESENTS! 💬\n\nAaj yeh dono group mein baat karenge:\n\n@${p1.id.split("@")[0]} 🤝 @${p2.id.split("@")[0]}\n\nRules:\n✅ Ek dusre ko introduce karo\n✅ Ek joke sunao\n✅ Ek compliment do\n\nShuru karo!\n\nGroup wait kar raha hai! 😂👀\n\nAgar nahi kiya toh group tumhara number publish karega! 😂 (JK!)`,
-    mentions: [p1.id, p2.id]
+    text: `💬 GROUP MATCHMAKER PRESENTS! 💬\n\nAaj yeh dono group mein baat karenge:\n\n${t} 🤝 ${t}\n\nRules:\n✅ Ek dusre ko introduce karo\n✅ Ek joke sunao\n✅ Ek compliment do\n\nShuru karo!\n\nGroup wait kar raha hai! 😂👀\n\nAgar nahi kiya toh group tumhara number publish karega! 😂 (JK!)`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2008,16 +1867,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const forgive = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🙏 KAAN PAKAD KE MAAFI! 🙏\n\n@${sender.split("@")[0]} ne @${forgive.id.split("@")[0]} ke saamne\nkaan pakad liye! 👂\n\n"Yaar sach mein sorry!\nMain galat tha/thi!\nTumne jo kaha woh sahi tha!\nTumhari baat sunni chahiye thi!\nAb maaf kar do please!"\n\n🥺🥺🥺🥺🥺\n\n@${forgive.id.split("@")[0]} ab maafi do!\nBechaara/beechari kaan pakde khada/khadi hai! 😂❤️\n\nMaafi hi pyaar hai! 💕`,
-    mentions: [sender, forgive.id]
+    text: `🙏 KAAN PAKAD KE MAAFI! 🙏\n\nTum ne ${t} ke saamne\nkaan pakad liye! 👂\n\n"Yaar sach mein sorry!\nMain galat tha/thi!\nTumne jo kaha woh sahi tha!\nTumhari baat sunni chahiye thi!\nAb maaf kar do please!"\n\n🥺🥺🥺🥺🥺\n\n${t} ab maafi do!\nBechaara/beechari kaan pakde khada/khadi hai! 😂❤️\n\nMaafi hi pyaar hai! 💕`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2033,16 +1889,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const destined = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🔮 TAQDIR KA INKISHAAF! 🔮\n\nStars, Moon, aur Algorithm sab ne\nmilke @${sender.split("@")[0]} ki TAQDIR batai:\n\n📜 "Is insaan ki zindagi mein @${destined.id.split("@")[0]} ek ahem kirdar ada karega/karegi!"\n\nKaise:\n✨ Khushiyon mein saath\n🌧️ Mushkilon mein saath\n😂 Hassi mein saath\n🥺 Aansoon mein saath\n\n"Taqdir ne mila diya,\nAb nibhaana tumhara kaam!"\n\nAllah ki marzi mein hi bhalaai hai! 🤲💫`,
-    mentions: [sender, destined.id]
+    text: `🔮 TAQDIR KA INKISHAAF! 🔮\n\nStars, Moon, aur Algorithm sab ne\nmilke Tum ki TAQDIR batai:\n\n📜 "Is insaan ki zindagi mein ${t} ek ahem kirdar ada karega/karegi!"\n\nKaise:\n✨ Khushiyon mein saath\n🌧️ Mushkilon mein saath\n😂 Hassi mein saath\n🥺 Aansoon mein saath\n\n"Taqdir ne mila diya,\nAb nibhaana tumhara kaam!"\n\nAllah ki marzi mein hi bhalaai hai! 🤲💫`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2058,16 +1911,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const scarer = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `😬 KAPKAPI REPORT! 😬\n\n@${sender.split("@")[0]} jab @${scarer.id.split("@")[0]} se\nbaat karta/karti hai toh:\n\n🫀 Dil: Tez tez dhadakne lagta hai\n🤲 Haath: Kaanpne lagte hain\n🗣️ Awaaz: Thodi thartharaati hai\n😳 Chehra: Zyada cheeks red hote hain\n🧠 Dimag: Hang ho jaata hai\n\nDoctor ne diagnosis diya:\n\n"SEVERE CASE OF PYAAR!" 💘\n\nKoi ilaj nahi, bas ik hi raasta:\nSeedha bol do! 😂❤️`,
-    mentions: [sender, scarer.id]
+    text: `😬 KAPKAPI REPORT! 😬\n\nTum jab ${t} se\nbaat karta/karti hai toh:\n\n🫀 Dil: Tez tez dhadakne lagta hai\n🤲 Haath: Kaanpne lagte hain\n🗣️ Awaaz: Thodi thartharaati hai\n😳 Chehra: Zyada cheeks red hote hain\n🧠 Dimag: Hang ho jaata hai\n\nDoctor ne diagnosis diya:\n\n"SEVERE CASE OF PYAAR!" 💘\n\nKoi ilaj nahi, bas ik hi raasta:\nSeedha bol do! 😂❤️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2083,21 +1933,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const praised = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const praises = [
-    `🌟 DIL SE TAARIF! 🌟\n\n@${sender.split("@")[0]} ne @${praised.id.split("@")[0]} ke baare mein\nGROUP KE SAAMNE kaha:\n\n"Sachchi baat yeh hai ke yeh insaan\nbahut acha/achi hai!\nKabhi kisi ko hurt nahi kiya,\nHamesha kisi ki madad ki,\nAur group ko hamesha khush rakha!\n\nAise log rare hain!\nKeep being amazing!" 🌟\n\nSab agree karo! 👇`,
-    `🌟 HONEST REVIEW! 🌟\n\n@${praised.id.split("@")[0]} ke baare mein\n@${sender.split("@")[0]} ka review:\n\n⭐⭐⭐⭐⭐ 5/5 Stars\n\n"Baatein karo toh din ban jaata hai,\nIgore karo toh din kharab!\nYeh insaan ka jaadu hai!\nMashaAllah!" 🥺✨`
+    `🌟 DIL SE TAARIF! 🌟\n\nTum ne ${t} ke baare mein\nGROUP KE SAAMNE kaha:\n\n"Sachchi baat yeh hai ke yeh insaan\nbahut acha/achi hai!\nKabhi kisi ko hurt nahi kiya,\nHamesha kisi ki madad ki,\nAur group ko hamesha khush rakha!\n\nAise log rare hain!\nKeep being amazing!" 🌟\n\nSab agree karo! 👇`,
+    `🌟 HONEST REVIEW! 🌟\n\n${t} ke baare mein\nTum ka review:\n\n⭐⭐⭐⭐⭐ 5/5 Stars\n\n"Baatein karo toh din ban jaata hai,\nIgore karo toh din kharab!\nYeh insaan ka jaadu hai!\nMashaAllah!" 🥺✨`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: praises[Math.floor(Math.random() * praises.length)], 
-    mentions: [sender, praised.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -2114,20 +1961,19 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const model = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const captions = [
-    `📸 CAPTION CONTEST! 📸\n\n@${model.id.split("@")[0]} ki DP ke liye\naaj ka best caption:\n\n"Allah ki art gallery ka\nSabse khoobsoorat painting!" 🎨\n\nHas lo, sachchi baat hai! 😂❤️`,
-    `📸 DP CAPTION! 📸\n\n@${model.id.split("@")[0]} ki profile picture ke liye:\n\n"Yeh insaan camera ke saamne nahi,\nCamera is ke saamne pose karta hai!"\n\n📸 MashaAllah! 🌟`,
-    `📸 PROFILE CAPTION! 📸\n\n@${model.id.split("@")[0]} ke liye best caption:\n\n"Warning: Itna sundar/sundar mat bano,\nLog apni aankhein kharaab kar lete hain!" 😂✨\n\nSach baat! 💖`
+    `📸 CAPTION CONTEST! 📸\n\n${t} ki DP ke liye\naaj ka best caption:\n\n"Allah ki art gallery ka\nSabse khoobsoorat painting!" 🎨\n\nHas lo, sachchi baat hai! 😂❤️`,
+    `📸 DP CAPTION! 📸\n\n${t} ki profile picture ke liye:\n\n"Yeh insaan camera ke saamne nahi,\nCamera is ke saamne pose karta hai!"\n\n📸 MashaAllah! 🌟`,
+    `📸 PROFILE CAPTION! 📸\n\n${t} ke liye best caption:\n\n"Warning: Itna sundar/sundar mat bano,\nLog apni aankhein kharaab kar lete hain!" 😂✨\n\nSach baat! 💖`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: captions[Math.floor(Math.random() * captions.length)], 
-    mentions: [model.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -2144,14 +1990,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const thinker = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🤯 OVERTHINKING AWARD! 🤯\n\nGroup ka Sabse Zyada Sochne Wala/Wali:\n\n@${thinker.id.split("@")[0]} 🧠💥\n\nInka Thought Process:\n\nKisi ne: "Ok" likha\n@${thinker.id.split("@")[0]}: "Ok matlab kya? Happy ok? Angry ok? Bored ok? Ignore kar raha/rahi hai ok? Mujhse naraaz hai ok? Doctor ko dikhaana chahiye ok? Ya sach mein ok?!"\n\nYahi sochne mein 3 ghante gaye! 😂💀\n\nBhai/behan - "Ok" bas OK hai! 😂❤️`,
-    mentions: [thinker.id]
+    text: `🤯 OVERTHINKING AWARD! 🤯\n\nGroup ka Sabse Zyada Sochne Wala/Wali:\n\n${t} 🧠💥\n\nInka Thought Process:\n\nKisi ne: "Ok" likha\n${t}: "Ok matlab kya? Happy ok? Angry ok? Bored ok? Ignore kar raha/rahi hai ok? Mujhse naraaz hai ok? Doctor ko dikhaana chahiye ok? Ya sach mein ok?!"\n\nYahi sochne mein 3 ghante gaye! 😂💀\n\nBhai/behan - "Ok" bas OK hai! 😂❤️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2168,14 +2013,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const amazing = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🤩 GHAZAB INSAAN! 🤩\n\nIs group mein ek GHAZAB insaan hai:\n\n@${amazing.id.split("@")[0]} 🌟\n\nKyun ghazab hain yeh?\n\n🤩 Kabhi kabhi itna funny\nke stomach hurt ho jaata hai\n🥺 Kabhi kabhi itna caring\nke dil bhar aata hai\n😤 Kabhi kabhi itna pagal\nke samajh nahi aata\n💖 Lekin hamesha itna pyaara/pyaari\nke group khaali lagta hai inke bina!\n\nGhazab ho tum! 🌟`,
-    mentions: [amazing.id]
+    text: `🤩 GHAZAB INSAAN! 🤩\n\nIs group mein ek GHAZAB insaan hai:\n\n${t} 🌟\n\nKyun ghazab hain yeh?\n\n🤩 Kabhi kabhi itna funny\nke stomach hurt ho jaata hai\n🥺 Kabhi kabhi itna caring\nke dil bhar aata hai\n😤 Kabhi kabhi itna pagal\nke samajh nahi aata\n💖 Lekin hamesha itna pyaara/pyaari\nke group khaali lagta hai inke bina!\n\nGhazab ho tum! 🌟`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2191,17 +2035,14 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const watched = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   const times = Math.floor(Math.random() * 20) + 5;
   
   await conn.sendMessage(mek.chat, {
-    text: `🟢 ONLINE CHECK REPORT! 🟢\n\nScientific Analysis ne bataya:\n\n@${sender.split("@")[0]} ne aaj\n@${watched.id.split("@")[0]} ka\n\nOnline status check kiya: ${times} baar! 😂\n\nTimeline:\n🕐 Subah 8: Check ✅\n🕑 Dopahar 1: Check ✅\n🕓 Shaam 4: Check ✅\n🕗 Raat 7: Check ✅\n🕙 Raat 10: Check ✅\n...\n\nBhai yeh mobile addiction nahi,\nYEH PYAAR HAI! 😭😂💕`,
-    mentions: [sender, watched.id]
+    text: `🟢 ONLINE CHECK REPORT! 🟢\n\nScientific Analysis ne bataya:\n\nTum ne aaj\n${t} ka\n\nOnline status check kiya: ${times} baar! 😂\n\nTimeline:\n🕐 Subah 8: Check ✅\n🕑 Dopahar 1: Check ✅\n🕓 Shaam 4: Check ✅\n🕗 Raat 7: Check ✅\n🕙 Raat 10: Check ✅\n...\n\nBhai yeh mobile addiction nahi,\nYEH PYAAR HAI! 😭😂💕`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2217,16 +2058,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const ally = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `⚔️ ALLIANCE DECLARE! ⚔️\n\n@${sender.split("@")[0]} ne @${ally.id.split("@")[0]} ko\nHAMDARD choose kiya!\n\n"Tum mere dushman ke dushman ho!\nIsliye tum mere dost ho!\nGroup mein tumhara saath chahiye!"\n\n🤝 @${ally.id.split("@")[0]} ab @${sender.split("@")[0]} ka\nOfficial Yaar hai!\n\nSaath mein:\n✅ Roast karenge\n✅ Defend karenge\n✅ Chai peeyenge\n✅ Drama karenge! 😂❤️`,
-    mentions: [sender, ally.id]
+    text: `⚔️ ALLIANCE DECLARE! ⚔️\n\nTum ne ${t} ko\nHAMDARD choose kiya!\n\n"Tum mere dushman ke dushman ho!\nIsliye tum mere dost ho!\nGroup mein tumhara saath chahiye!"\n\n🤝 ${t} ab Tum ka\nOfficial Yaar hai!\n\nSaath mein:\n✅ Roast karenge\n✅ Defend karenge\n✅ Chai peeyenge\n✅ Drama karenge! 😂❤️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2242,21 +2080,18 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const truths = [
-    `😅 BURA NA MANO PAR... 😅\n\n@${target.id.split("@")[0]} bhai/behan:\n\n"Bura na mano par...\nTumhare replies aate hain\njab main apna phone rakh deta/deti hoon!\n\nBura na mano par...\nTumhara 'abhi aata/aati hoon'\nmein 45 minute lagte hain!\n\nBura na mano par...\nTum group ke sabse zyada nakhre waale ho!\n\nPar sach yeh hai ke...\nTUMHARE BINA GROUP SOONA HAI!" ❤️😂`,
-    `😅 HONEST BAAT! 😅\n\n@${sender.split("@")[0]} ne @${target.id.split("@")[0]} ko kaha:\n\n"Bura na mano par sach yeh hai ke:\nTum pagal ho!\nPar tumhara pagalpan bhi cute hai!\nTumse ladna bhi achha lagta hai!\nAur tumhara saath bhi chahiye hamesha!"\n\nYeh toh love-hate relationship hai! 😂💕`
+    `😅 BURA NA MANO PAR... 😅\n\n${t} bhai/behan:\n\n"Bura na mano par...\nTumhare replies aate hain\njab main apna phone rakh deta/deti hoon!\n\nBura na mano par...\nTumhara 'abhi aata/aati hoon'\nmein 45 minute lagte hain!\n\nBura na mano par...\nTum group ke sabse zyada nakhre waale ho!\n\nPar sach yeh hai ke...\nTUMHARE BINA GROUP SOONA HAI!" ❤️😂`,
+    `😅 HONEST BAAT! 😅\n\nTum ne ${t} ko kaha:\n\n"Bura na mano par sach yeh hai ke:\nTum pagal ho!\nPar tumhara pagalpan bhi cute hai!\nTumse ladna bhi achha lagta hai!\nAur tumhara saath bhi chahiye hamesha!"\n\nYeh toh love-hate relationship hai! 😂💕`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: truths[Math.floor(Math.random() * truths.length)], 
-    mentions: [sender, target.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -2273,14 +2108,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const beautiful = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🪞 MIRROR MIRROR ON THE WALL! 🪞\n\nMagic Mirror se pucha gaya:\n\n"Mirror mirror on the wall,\nIs group mein sabse beautiful kaun?"\n\n🪞 Mirror ne jawab diya:\n\n"${beautiful.id.split("@")[0]} of course!" 👑\n\n"Allah ne khoob banaya hai inhe!\nAndar se bhi, bahar se bhi!\nAur yeh khud nahi maante - tab bhi!"\n\nMashaAllah! 🌟 Believe in yourself! 💪`,
-    mentions: [beautiful.id]
+    text: `🪞 MIRROR MIRROR ON THE WALL! 🪞\n\nMagic Mirror se pucha gaya:\n\n"Mirror mirror on the wall,\nIs group mein sabse beautiful kaun?"\n\n🪞 Mirror ne jawab diya:\n\n"${t} of course!" 👑\n\n"Allah ne khoob banaya hai inhe!\nAndar se bhi, bahar se bhi!\nAur yeh khud nahi maante - tab bhi!"\n\nMashaAllah! 🌟 Believe in yourself! 💪`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2297,14 +2131,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const hero = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🦸 AAJ KA GROUP HERO! 🦸\n\nSuperhero Music Plays 🎵\n\nAaj ka OFFICIAL GROUP HERO/HEROINE:\n\n⚡ @${hero.id.split("@")[0]} ⚡\n\nSuperpowers:\n💬 Boring conversations ko fun banana\n😂 Sad mood ko khush karna\n🎯 Sahi waqt pe sahi baat kehna\n❤️ Group ko pyaar se bharpur rakhna\n\nThank you for being our hero!\n\nCape pehno! 🦸🎊`,
-    mentions: [hero.id]
+    text: `🦸 AAJ KA GROUP HERO! 🦸\n\nSuperhero Music Plays 🎵\n\nAaj ka OFFICIAL GROUP HERO/HEROINE:\n\n⚡ ${t} ⚡\n\nSuperpowers:\n💬 Boring conversations ko fun banana\n😂 Sad mood ko khush karna\n🎯 Sahi waqt pe sahi baat kehna\n❤️ Group ko pyaar se bharpur rakhna\n\nThank you for being our hero!\n\nCape pehno! 🦸🎊`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2321,14 +2154,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const natkhat = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `😜 NATKHAT AWARD! 😜\n\nGroup ka sabse Natkhat:\n\n@${natkhat.id.split("@")[0]} 🏆\n\nInka crime record:\n😜 Log serious baar pe funny baat - Guilty ✅\n😂 Kisi ki taarif ke beech mein mazaak - Guilty ✅\n🙃 Serious mood kharaab karna - Guilty ✅\n😅 Khud toh hans le, doosron ko confuse kare - Guilty ✅\n\nSentence:\nGroup ko aur zyada hasaate raho! 😂❤️\n\nTumhare bina group phika hai! 🌶️`,
-    mentions: [natkhat.id]
+    text: `😜 NATKHAT AWARD! 😜\n\nGroup ka sabse Natkhat:\n\n${t} 🏆\n\nInka crime record:\n😜 Log serious baar pe funny baat - Guilty ✅\n😂 Kisi ki taarif ke beech mein mazaak - Guilty ✅\n🙃 Serious mood kharaab karna - Guilty ✅\n😅 Khud toh hans le, doosron ko confuse kare - Guilty ✅\n\nSentence:\nGroup ko aur zyada hasaate raho! 😂❤️\n\nTumhare bina group phika hai! 🌶️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2345,14 +2177,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const worrier = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `😰 PARESHAAN AWARD! 😰\n\nGroup ka Sabse PARESHAAN REHNE WALA/WALI:\n\n@${worrier.id.split("@")[0]} 🏆\n\nInka daily pareshani schedule:\n\n😰 Subah: "Aaj kya hoga?"\n😟 Dopahar: "Kya woh mujhse naraaz hain?"\n😱 Shaam: "Maine kuch galat toh nahi kaha?"\n😭 Raat: "Sab theek hai na?"\n\nPar yeh jo care karte/karti hain,\nyahi inhe special banata hai!\n\nSab theek hai! Allah pe bharosa rakho! 🤲💖`,
-    mentions: [worrier.id]
+    text: `😰 PARESHAAN AWARD! 😰\n\nGroup ka Sabse PARESHAAN REHNE WALA/WALI:\n\n${t} 🏆\n\nInka daily pareshani schedule:\n\n😰 Subah: "Aaj kya hoga?"\n😟 Dopahar: "Kya woh mujhse naraaz hain?"\n😱 Shaam: "Maine kuch galat toh nahi kaha?"\n😭 Raat: "Sab theek hai na?"\n\nPar yeh jo care karte/karti hain,\nyahi inhe special banata hai!\n\nSab theek hai! Allah pe bharosa rakho! 🤲💖`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2368,16 +2199,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const candidate = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `📋 LOVE INTERVIEW! 📋\n\nInterviewer: @${sender.split("@")[0]}\nCandidate: @${candidate.id.split("@")[0]}\n\nQuestions:\n\nQ1: "Apne aap ke baare mein batao?"\nQ2: "Raat ko 2 baje call karoon toh kya karo ge/gi?"\nQ3: "Kisi ko ignore karte/karti ho kya?"\nQ4: "Pyaar mein loyalty ka kya matlab hai?"\nQ5: "5 saal baad khud ko kahan dekhte/dekhti ho?"\n\nPanel ka verdict: ✅ HIRED FOR DOST LEVEL!\nNext promotion: Khaas Dost 😂💕\n\nInhei dil se liya gaya interview mein! 😂❤️`,
-    mentions: [sender, candidate.id]
+    text: `📋 LOVE INTERVIEW! 📋\n\nInterviewer: Tum\nCandidate: ${t}\n\nQuestions:\n\nQ1: "Apne aap ke baare mein batao?"\nQ2: "Raat ko 2 baje call karoon toh kya karo ge/gi?"\nQ3: "Kisi ko ignore karte/karti ho kya?"\nQ4: "Pyaar mein loyalty ka kya matlab hai?"\nQ5: "5 saal baad khud ko kahan dekhte/dekhti ho?"\n\nPanel ka verdict: ✅ HIRED FOR DOST LEVEL!\nNext promotion: Khaas Dost 😂💕\n\nInhei dil se liya gaya interview mein! 😂❤️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2393,16 +2221,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const gameender = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `💔 KHEL TAMAM! 💔\n\n@${gameender.id.split("@")[0]} ne aaj\n@${sender.split("@")[0]} ka KHEL TAMAM kar diya!\n\nKaise?\n\nScenario:\n@${sender.split("@")[0]}: "Good Morning!"\n@${gameender.id.split("@")[0]}: "Hm."\n\n😭 Ek ghante ki mehnat,\n1 word mein khatam!\n\n"Hm" - yeh do haroof se dil toot gaya! 💔\n\n@${gameender.id.split("@")[0]} thoda aur type karo yaar! 😂❤️`,
-    mentions: [sender, gameender.id]
+    text: `💔 KHEL TAMAM! 💔\n\n${t} ne aaj\nTum ka KHEL TAMAM kar diya!\n\nKaise?\n\nScenario:\nTum: "Good Morning!"\n${t}: "Hm."\n\n😭 Ek ghante ki mehnat,\n1 word mein khatam!\n\n"Hm" - yeh do haroof se dil toot gaya! 💔\n\n${t} thoda aur type karo yaar! 😂❤️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2419,16 +2244,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const shuffled = participants.sort(() => 0.5 - Math.random());
-  const rishta1 = shuffled[0];
-  const rishta2 = shuffled[1];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `💍 RISHTA PAKKA COMMITTEE! 💍\n\nIs group ne milke faislah kiya:\n\n@${rishta1.id.split("@")[0]} + @${rishta2.id.split("@")[0]}\n\n= RISHTA PAKKA! 🎊\n\nCommittee ka analysis:\n✅ Dono group mein active hain\n✅ Dono ki personality match karti hai\n✅ Dono ek doosre ke jokes pe haste hain\n✅ Dono perfect nakhrebaaz hain\n\nSagai ki meethai dono taraf se chahiye! 🍬😂\n\nMubarak ho dono ko! 💕`,
-    mentions: [rishta1.id, rishta2.id]
+    text: `💍 RISHTA PAKKA COMMITTEE! 💍\n\nIs group ne milke faislah kiya:\n\n${t} + ${t}\n\n= RISHTA PAKKA! 🎊\n\nCommittee ka analysis:\n✅ Dono group mein active hain\n✅ Dono ki personality match karti hai\n✅ Dono ek doosre ke jokes pe haste hain\n✅ Dono perfect nakhrebaaz hain\n\nSagai ki meethai dono taraf se chahiye! 🍬😂\n\nMubarak ho dono ko! 💕`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2443,9 +2265,10 @@ cmd({
   category: "💬 Fun Text",
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
   const items = [
     { item: "1 kg Wafa", price: "Ek sachchi muskaan" },
     { item: "500g Mohabbat", price: "Ek honest reply" },
@@ -2456,8 +2279,8 @@ cmd({
   const chosen = items[Math.floor(Math.random() * items.length)];
   
   await conn.sendMessage(mek.chat, {
-    text: `🏪 PYAAR KI DUKAAN! 🏪\n\n@${sender.split("@")[0]} ne aaj order kiya:\n\n🛍️ Item: ${chosen.item}\n💰 Price: ${chosen.price}\n\nOrder Status: PROCESSING... ⏳\n\nDelivery time: Jab dono tayaar hon!\n\nNote: Yeh dukaan ek baar visit karo,\nZindagi bhar ke liye delivery hogi! 😂💕\n\nOrder accepted! 🎊`,
-    mentions: [sender]
+    text: `🏪 PYAAR KI DUKAAN! 🏪\n\nTum ne aaj order kiya:\n\n🛍️ Item: ${chosen.item}\n💰 Price: ${chosen.price}\n\nOrder Status: PROCESSING... ⏳\n\nDelivery time: Jab dono tayaar hon!\n\nNote: Yeh dukaan ek baar visit karo,\nZindagi bhar ke liye delivery hogi! 😂💕\n\nOrder accepted! 🎊`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2473,16 +2296,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const target = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `👄 ZABAAN SAMBHALNA YAAD DILAYA! 👄\n\n@${sender.split("@")[0]} ne @${target.id.split("@")[0]} ko\nnasehat di:\n\n"Yaar zabaan sambhala karo!\nJo bolte ho - yaad rehta hai!\nJo likhte ho - screenshot hota hai!\nJo commit karte ho - nibhaana padta hai!\n\nLekin kuch lafz aisa keh do ke,\nLog hamesha yaad rakhein,\nKhushiyon wale lafz!\n\nKyunke tum jo bhi bolte/bolti ho,\nDono per effect hota hai!"\n\n❤️ Pyaar se kaho, pyaar milega! 🌹`,
-    mentions: [sender, target.id]
+    text: `👄 ZABAAN SAMBHALNA YAAD DILAYA! 👄\n\nTum ne ${t} ko\nnasehat di:\n\n"Yaar zabaan sambhala karo!\nJo bolte ho - yaad rehta hai!\nJo likhte ho - screenshot hota hai!\nJo commit karte ho - nibhaana padta hai!\n\nLekin kuch lafz aisa keh do ke,\nLog hamesha yaad rakhein,\nKhushiyon wale lafz!\n\nKyunke tum jo bhi bolte/bolti ho,\nDono per effect hota hai!"\n\n❤️ Pyaar se kaho, pyaar milega! 🌹`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2498,16 +2318,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const promisebreaker = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🤥 JHOOTA WADA EXPOSED! 🤥\n\n@${promisebreaker.id.split("@")[0]} ke famous wade:\n\n❌ "Kal zaroor reply karunga/karungi" - 3 din gaye\n❌ "Main hamesha saath hoon" - aur fir ghaib!\n❌ "Tujhe kabhi chhodunga/chohdungi nahi" - classical 😂\n❌ "Seedha baat karunga/karungi" - kabhi nahi kiya\n\n@${sender.split("@")[0]} gawah hai! 😂\n\nPar sachchi baat yeh hai ke:\nKoi perfect nahi hota!\nMaafi maango aur naya wada karo! ❤️\n\nIs baar wada nibhaao! 💪`,
-    mentions: [sender, promisebreaker.id]
+    text: `🤥 JHOOTA WADA EXPOSED! 🤥\n\n${t} ke famous wade:\n\n❌ "Kal zaroor reply karunga/karungi" - 3 din gaye\n❌ "Main hamesha saath hoon" - aur fir ghaib!\n❌ "Tujhe kabhi chhodunga/chohdungi nahi" - classical 😂\n❌ "Seedha baat karunga/karungi" - kabhi nahi kiya\n\nTum gawah hai! 😂\n\nPar sachchi baat yeh hai ke:\nKoi perfect nahi hota!\nMaafi maango aur naya wada karo! ❤️\n\nIs baar wada nibhaao! 💪`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2524,14 +2341,13 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const gold = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `💛 SONA INSAAN! 💛\n\nIs group ka SABSE SONA INSAAN:\n\n@${gold.id.split("@")[0]} ✨\n\nKyu sona hain yeh?\n\n💛 Kabhi kisi ko bura nahi bol sakte/sakti\n💛 Sab ki baat dhyan se sunte/sunti hain\n💛 Mushkil mein pehle dusron ke baare mein soochte/soochti hain\n💛 Group mein hamesha positivity laate/laati hain\n\nAisa insaan toh heera hai,\nQismat wale ko milta hai! 💎\n\nAllah tumhe salamat rakhe! 🤲`,
-    mentions: [gold.id]
+    text: `💛 SONA INSAAN! 💛\n\nIs group ka SABSE SONA INSAAN:\n\n${t} ✨\n\nKyu sona hain yeh?\n\n💛 Kabhi kisi ko bura nahi bol sakte/sakti\n💛 Sab ki baat dhyan se sunte/sunti hain\n💛 Mushkil mein pehle dusron ke baare mein soochte/soochti hain\n💛 Group mein hamesha positivity laate/laati hain\n\nAisa insaan toh heera hai,\nQismat wale ko milta hai! 💎\n\nAllah tumhe salamat rakhe! 🤲`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2548,19 +2364,18 @@ cmd({
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
   
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId);
-  const gossipabout = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const gossips = [
-    `🗣️ GROUP GOSSIP! 🗣️\n\nPsst... Suno suno!\n\nKisi reliable source se khabar aayi hai ke:\n\n@${gossipabout.id.split("@")[0]} actually group mein sabko like karte/karti hain!\nHaan bhai/behan,\nWoh jo "main kisi ki parwah nahi karta/karti" wala act hai,\nBILKUL JHOOT HAI! 😂\n\nYeh toh group ke sabse caring member hain!\n\nSource: 100% reliable! 😂💕`,
-    `🗣️ BREAKING GOSSIP! 🗣️\n\nAaj ki sabse badi khabar:\n\n@${gossipabout.id.split("@")[0]} roz group check karte/karti hain!\nAur sab ke messages padhte/padhti hain!\nLekin reply sirf tab karte/karti hain jab mood ho!\n\nYeh khabar sachchi hai kyunke:\nHum bhi yahi karte hain! 😂💀\n\nKoi gossip nahi, sab ek jaise hain! ❤️`
+    `🗣️ GROUP GOSSIP! 🗣️\n\nPsst... Suno suno!\n\nKisi reliable source se khabar aayi hai ke:\n\n${t} actually group mein sabko like karte/karti hain!\nHaan bhai/behan,\nWoh jo "main kisi ki parwah nahi karta/karti" wala act hai,\nBILKUL JHOOT HAI! 😂\n\nYeh toh group ke sabse caring member hain!\n\nSource: 100% reliable! 😂💕`,
+    `🗣️ BREAKING GOSSIP! 🗣️\n\nAaj ki sabse badi khabar:\n\n${t} roz group check karte/karti hain!\nAur sab ke messages padhte/padhti hain!\nLekin reply sirf tab karte/karti hain jab mood ho!\n\nYeh khabar sachchi hai kyunke:\nHum bhi yahi karte hain! 😂💀\n\nKoi gossip nahi, sab ek jaise hain! ❤️`
   ];
   
   await conn.sendMessage(mek.chat, { 
     text: gossips[Math.floor(Math.random() * gossips.length)], 
-    mentions: [gossipabout.id] 
+    mentions: tm 
   }, { quoted: mek });
 });
 
@@ -2576,12 +2391,9 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const relative = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   const relations = [
     { rel: "Pagal Chacha/Chachi", desc: "Har waqt advice dete hain jo kisi ne nahi maangi!" },
@@ -2592,8 +2404,8 @@ cmd({
   const chosen = relations[Math.floor(Math.random() * relations.length)];
   
   await conn.sendMessage(mek.chat, {
-    text: `👨‍👩‍👧‍👦 FAMILY REVEAL! 👨‍👩‍👧‍👦\n\n@${sender.split("@")[0]} ka group family mein:\n\n@${relative.id.split("@")[0]} hai inke:\n\n${chosen.rel} 😂\n\nKyun? Kyunke:\n"${chosen.desc}"\n\nPar family family hoti hai!\nPyaar karo sabko! 😂❤️\n\nGroup = Hamari Family! 👨‍👩‍👧‍👦`,
-    mentions: [sender, relative.id]
+    text: `👨‍👩‍👧‍👦 FAMILY REVEAL! 👨‍👩‍👧‍👦\n\nTum ka group family mein:\n\n${t} hai inke:\n\n${chosen.rel} 😂\n\nKyun? Kyunke:\n"${chosen.desc}"\n\nPar family family hoti hai!\nPyaar karo sabko! 😂❤️\n\nGroup = Hamari Family! 👨‍👩‍👧‍👦`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2609,16 +2421,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const trusted = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `🙈 TRUST TEST! 🙈\n\nAaj ka Trust Game:\n\n@${sender.split("@")[0]} ne aankhein band ki\naur @${trusted.id.split("@")[0]} pe TRUST kiya!\n\nScenario:\n"Aankhein band hain,\nHaath age badhaya,\nAur keh diya:\n'Main tumpe trust karta/karti hoon!'"\n\n@${trusted.id.split("@")[0]} ka reaction:\n\nOption A: Haath thaam liya ❤️\nOption B: Bol diya "Oops wrong person!" 😂\n\nGroup ko batao @${trusted.id.split("@")[0]}!\nKya choose kiya? 👀😂`,
-    mentions: [sender, trusted.id]
+    text: `🙈 TRUST TEST! 🙈\n\nAaj ka Trust Game:\n\nTum ne aankhein band ki\naur ${t} pe TRUST kiya!\n\nScenario:\n"Aankhein band hain,\nHaath age badhaya,\nAur keh diya:\n'Main tumpe trust karta/karti hoon!'"\n\n${t} ka reaction:\n\nOption A: Haath thaam liya ❤️\nOption B: Bol diya "Oops wrong person!" 😂\n\nGroup ko batao ${t}!\nKya choose kiya? 👀😂`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -2634,16 +2443,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { reply }) => {
   if (!mek.chat.endsWith('@g.us')) return reply("❌ This command only works in groups!");
-  
-  const sender = mek.sender;
-  const groupMetadata = await conn.groupMetadata(mek.chat);
-  const botId = getBotId(conn);
-  const participants = groupMetadata.participants.filter(p => p.id !== botId && p.id !== sender);
-  const forever = participants[Math.floor(Math.random() * participants.length)];
+  const target = await pickTarget(conn, mek, m);
+  const t = target ? '@' + target.split('@')[0] : 'woh shaks';
+  const tm = target ? [target] : [];
   
   await conn.sendMessage(mek.chat, {
-    text: `♾️ ALVIDA NAHI KEHNA! ♾️\n\n@${sender.split("@")[0]} ne @${forever.id.split("@")[0]} se\npoori group ke saamne wada kiya:\n\n"Main tujhe ALVIDA nahi kahunga/kahungi!\n\nChahe koi baat ho jaaye,\nChahe beech mein khamoshi aaye,\nChahe raaste alag ho jaayein,\n\nMain group mein hamesha\ntumhara naam leke yaad karunga/karungi!\nKyunke kuch rishte alvida ke baad bhi\nNahi jaate!"\n\n😭 Poori group emotional ho gayi! 😭\n\nYahi sacchi dosti hai! ♾️❤️`,
-    mentions: [sender, forever.id]
+    text: `♾️ ALVIDA NAHI KEHNA! ♾️\n\nTum ne ${t} se\npoori group ke saamne wada kiya:\n\n"Main tujhe ALVIDA nahi kahunga/kahungi!\n\nChahe koi baat ho jaaye,\nChahe beech mein khamoshi aaye,\nChahe raaste alag ho jaayein,\n\nMain group mein hamesha\ntumhara naam leke yaad karunga/karungi!\nKyunke kuch rishte alvida ke baad bhi\nNahi jaate!"\n\n😭 Poori group emotional ho gayi! 😭\n\nYahi sacchi dosti hai! ♾️❤️`,
+    mentions: tm
   }, { quoted: mek });
 });
 
@@ -3910,4 +3716,212 @@ cmd({
   } catch (e) { 
     reply(`❌ Error: ${e.message}`); 
   }
+});
+// ============================================
+// NEW COMMANDS (v2 additions)
+// ============================================
+
+// 1. TAG LAFZ — tags the replied person with a romantic line (reply required)
+cmd({
+  pattern: "taglafz",
+  alias: ["tagline", "romantictag"],
+  desc: "Reply to someone to tag them with a romantic line",
+  react: "💌",
+  category: "💬 Fun Text",
+  filename: __filename
+}, async (conn, mek, m, { reply }) => {
+  try {
+    const target = await pickTarget(conn, mek, m);
+    if (!target) return reply("💌 *Reply to someone's message with* `.taglafz` *to tag them!*");
+    const lines = [
+      "teri muskaan pe jaan deta hoon",
+      "tu group ki sabse khoobsoorat cheez hai",
+      "tera ek message din bana deta hai",
+      "teri baatein dil ko sukoon deti hain",
+      "tu hai toh group jannat hai"
+    ];
+    const line = lines[Math.floor(Math.random() * lines.length)];
+    await conn.sendMessage(mek.chat, {
+      text: `💌 @${target.split("@")[0]} — ${line}!`,
+      mentions: [target]
+    }, { quoted: mek });
+  } catch (e) { reply(`❌ Error: ${e.message}`); }
+});
+
+// 2. FILMY ENTRY — filmy style entry of replied person
+cmd({
+  pattern: "filmyentry",
+  alias: ["entry", "heropanti"],
+  desc: "Reply to someone for their filmy hero entry",
+  react: "🎬",
+  category: "💬 Fun Text",
+  filename: __filename
+}, async (conn, mek, m, { reply }) => {
+  try {
+    const target = await pickTarget(conn, mek, m);
+    if (!target) return reply("🎬 *Reply to someone's message with* `.filmyentry`");
+    const scenes = [
+      `🎬 *HERO ENTRY!* 🎬\n\nSlow motion mein group mein aaye/aayi @${target.split("@")[0]}!\n\n🌬️ Hawa tez chalne lagi\n🎵 Background music: TANANA NA NA\n😎 Chashme ka style\n💥 Entry = BLOCKBUSTER!\n\nAudience: TAALI! 👏👏👏`,
+      `🎬 *VILLAIN ENTRY!* 🎬\n\nDhamakedaar entry li @${target.split("@")[0]} ne!\n\n😈 Slow walk\n🎵 Music: DARK & POWERFUL\n👀 Sab ki nazar ek jagah\n\nKahani mein twist aa gaya! 😂`
+    ];
+    await conn.sendMessage(mek.chat, {
+      text: scenes[Math.floor(Math.random() * scenes.length)],
+      mentions: [target]
+    }, { quoted: mek });
+  } catch (e) { reply(`❌ Error: ${e.message}`); }
+});
+
+// 3. SACCHA ASHIQ — true lover certificate (reply)
+cmd({
+  pattern: "sachaashiq",
+  alias: ["truelover", "loyalcert"],
+  desc: "Reply to someone to give them true lover certificate",
+  react: "💘",
+  category: "💬 Fun Text",
+  filename: __filename
+}, async (conn, mek, m, { reply }) => {
+  try {
+    const target = await pickTarget(conn, mek, m);
+    if (!target) return reply("💘 *Reply to someone's message with* `.sachaashiq`");
+    const score = Math.floor(Math.random() * 40) + 60;
+    await conn.sendMessage(mek.chat, {
+      text: `💘 *SACHA ASHIQ CERTIFICATE* 💘\n\nYeh certificate diya jaata hai:\n\n🏆 @${target.split("@")[0]} ko\n\nLoyalty Score: *${score}/100*\n\n${"❤️".repeat(Math.floor(score/20))}\n\nYeh insaan dil ka sachcha hai!\nKisi ka dil mat todna bhai/behan! 😂❤️`,
+      mentions: [target]
+    }, { quoted: mek });
+  } catch (e) { reply(`❌ Error: ${e.message}`); }
+});
+
+// 4. DIL KI BAAT — heart's message for replied person
+cmd({
+  pattern: "dilkebaat",
+  alias: ["dilbola", "hearttalk"],
+  desc: "Reply to someone - dil unke liye kya kehta hai",
+  react: "💓",
+  category: "💬 Fun Text",
+  filename: __filename
+}, async (conn, mek, m, { reply }) => {
+  try {
+    const target = await pickTarget(conn, mek, m);
+    if (!target) return reply("💓 *Reply to someone's message with* `.dilkebaat`");
+    const lines = [
+      `💓 *DIL KI BAAT* 💓\n\nDil ne kaha @${target.split("@")[0]} ke baare mein:\n\n*"Jab yeh online aate/aati hain,\ntoh dil bole - aa gaya/gayi mera din!"* 😂❤️`,
+      `💓 *DIL KA SANDESH* 💓\n\nDil ka message @${target.split("@")[0]} ke liye:\n\n*"Teri baaton mein woh baat hai,\nJo dil ko chain deti hai!\nAllah tujhe khush rakhe!"* 🤲❤️`
+    ];
+    await conn.sendMessage(mek.chat, {
+      text: lines[Math.floor(Math.random() * lines.length)],
+      mentions: [target]
+    }, { quoted: mek });
+  } catch (e) { reply(`❌ Error: ${e.message}`); }
+});
+
+// 5. PYAAR STATUS — your love status today (no mention)
+cmd({
+  pattern: "pyaarstatus",
+  alias: ["lovestatus", "aajkipyaar"],
+  desc: "Your love status for today",
+  react: "💝",
+  category: "💬 Fun Text",
+  filename: __filename
+}, async (conn, mek, m, { reply }) => {
+  try {
+    const pct = Math.floor(Math.random() * 100) + 1;
+    const msgs = [
+      `💝 *AAJ KA PYAAR STATUS!* 💝\n\nDil ka mood: *${pct}% romantic*\n\n${"💗".repeat(Math.floor(pct/20))}${"🤍".repeat(5-Math.floor(pct/20))}\n\nAaj dil thoda zyada khush hai!\nKisi ko GN bol do — full marks! 😂`,
+      `💝 *PYAAR METER!* 💝\n\nAaj ka dil status: *${pct}%*\n\n${pct > 70 ? "🔥 Full filmy mood! Kisi ko shayari suna do!" : pct > 40 ? "😊 Normal — thodi si khushiyon ki zaroorat hai!" : "😅 Dil ka charger lagao — chai peeyo!" }`
+    ];
+    reply(msgs[Math.floor(Math.random() * msgs.length)]);
+  } catch (e) { reply(`❌ Error: ${e.message}`); }
+});
+
+// 6. SHIP NAME — combine two names
+cmd({
+  pattern: "shipname",
+  alias: ["ship", "jodiname"],
+  desc: "Combine two names: .shipname Ali Sara",
+  react: "💑",
+  category: "💬 Fun Text",
+  filename: __filename
+}, async (conn, mek, m, { reply, args }) => {
+  try {
+    if (!args[1]) return reply(`💑 *SHIP NAME GENERATOR*\n\nUsage: .shipname Ali Sara\n\nDo naam likho — main unka ship name banaunga! 😂`);
+    const n1 = args[0], n2 = args[1];
+    const ship = n1.slice(0, Math.ceil(n1.length/2)) + n2.slice(Math.floor(n2.length/2));
+    reply(`💑 *SHIP NAME!* 💑\n\n${n1} + ${n2}\n\n= *${ship.charAt(0).toUpperCase() + ship.slice(1)}* 💘\n\nHashtag: #${n1}${n2}\n\nYeh ship official hai kya? Group ko batao! 😂`);
+  } catch (e) { reply(`❌ Error: ${e.message}`); }
+});
+
+// 7. AAJ KA DIL — heart mood of the day
+cmd({
+  pattern: "aajkadil",
+  alias: ["dilmood", "heartoday"],
+  desc: "Your heart's mood today",
+  react: "❤️",
+  category: "💬 Fun Text",
+  filename: __filename
+}, async (conn, mek, m, { reply }) => {
+  try {
+    const moods = [
+      `❤️ *AAJ KA DIL!* ❤️\n\nStatus: *MASHALLAH — FULL HAPPY!* 😄\n\nDil bol raha hai: "Aaj sab acha hoga!"\n\nShukr karo — yeh din kamaal ka hai! 🤲`,
+      `❤️ *DIL KA HAAL!* ❤️\n\nStatus: *THODA FILMY* 🎬\n\nDil bol raha hai: "Kisi ki yaad aa rahi hai..."\n\nChai banao aur gaana suno! ☕🎵`,
+      `❤️ *DIL REPORT!* ❤️\n\nStatus: *CHARGED & READY!* ⚡\n\nDil bol raha hai: "Aaj kuch accha karo!"\n\nJaago — waqt ke saath chalo! 💪`
+    ];
+    reply(moods[Math.floor(Math.random() * moods.length)]);
+  } catch (e) { reply(`❌ Error: ${e.message}`); }
+});
+
+// 8. PYAAR SHAYARI — shayari tagging replied person
+cmd({
+  pattern: "pyaarshayari",
+  alias: ["shayari4u", "sher2"],
+  desc: "Reply to someone to send them a shayari",
+  react: "🌹",
+  category: "💬 Fun Text",
+  filename: __filename
+}, async (conn, mek, m, { reply }) => {
+  try {
+    const target = await pickTarget(conn, mek, m);
+    if (!target) return reply("🌹 *Reply to someone's message with* `.pyaarshayari`");
+    const shers = [
+      `🌹 *SHAYARI* 🌹\n\n@${target.split("@")[0]} ke liye:\n\n*"Teri baaton mein woh jaadu hai,\nJo dil ke taale khol deta hai,\nTu paas ho toh lage yehi,\nJannat ka darwaza khul gaya hai!"* 💖`,
+      `🌹 *SHER* 🌹\n\n@${target.split("@")[0]} ke naam:\n\n*"Na chand si hai tu na sitaron si,\nPhir bhi duniya se haseen hai tu,\nKyunki tu hai — bas tu hi tu!"* 😂❤️`
+    ];
+    await conn.sendMessage(mek.chat, {
+      text: shers[Math.floor(Math.random() * shers.length)],
+      mentions: [target]
+    }, { quoted: mek });
+  } catch (e) { reply(`❌ Error: ${e.message}`); }
+});
+
+// 9. MOHABBAT TRACKER — how much you miss the replied person
+cmd({
+  pattern: "mohabattracker",
+  alias: ["misstracker", "yaadtracker"],
+  desc: "Reply to someone - kitna miss karte ho",
+  react: "📈",
+  category: "💬 Fun Text",
+  filename: __filename
+}, async (conn, mek, m, { reply }) => {
+  try {
+    const target = await pickTarget(conn, mek, m);
+    if (!target) return reply("📈 *Reply to someone's message with* `.mohabattracker`");
+    const pct = Math.floor(Math.random() * 100) + 1;
+    await conn.sendMessage(mek.chat, {
+      text: `📈 *MISSING TRACKER!* 📈\n\n@${target.split("@")[0]} ki yaad:\n\n*${pct}%* tak aa rahi hai aaj!\n\n${"📶".repeat(Math.floor(pct/25))}${"▫️".repeat(4-Math.floor(pct/25))}\n\n${pct > 75 ? "🔥 Bhai control karo — ICU wala scene hai!" : pct > 40 ? "😊 Normal missing — dil mein jagah hai!" : "😅 Aaj dil busy hai — kal try karo!"}`,
+      mentions: [target]
+    }, { quoted: mek });
+  } catch (e) { reply(`❌ Error: ${e.message}`); }
+});
+
+// 10. FUN MENU — list all fun commands
+cmd({
+  pattern: "funmenu",
+  alias: ["funlist", "fmenu"],
+  desc: "Show all fun text commands",
+  react: "🎪",
+  category: "💬 Fun Text",
+  filename: __filename
+}, async (conn, mek, m, { reply }) => {
+  try {
+    reply(`🎪 *FUN TEXT MENU* 🎪\n\n*Love & Romance:*\n.ishqmeter .andhaishq .lafzmohabbat .pehlinazar .dillagi\n.khoobsurat .dhadkan .pehlaakhat .ziddidil .yaadaata\n.taubatauba .pehlamuhabbat .wafaimtihaan .donokikahani\n.gulabbhejo .aankhein .shayarban .dushmandost .tangkarna\n.smilechurao .jaan .qismatwala .jhoothpyaar .mohabbatqarz\n.nazarutarao .romanticbakwaas .aashiqanaaward .mohabbatteri\n.dilkhol .gussapyaar .tangaphanda .anokhapyaar .chandsa\n.dostyadildar .galatfehmi .perfectmatch .raazkhola\n.mohabbatdarjaa .dua .khwaabon\n\n*Tag Commands (reply to someone):*\n.taglafz .filmyentry .sachaashiq .dilkebaat\n.pyaarshayari .mohabattracker\n\n*Fun & Random:*\n.akela .bewafa .chakkar .ullubana .taalibajao\n.neendurai .chatpata .waitingroom .taj .lafangaa\n.chocolatewala .baatkaatna .palat .gaanasunao\n.haaththamna .chuprahna .phoolonkahaar .ghoordekhna\n.bahaana .tarkeeb .hassichhupa .mobileband .pagalpancert\n.wallpaper .donobaat .kaanpakadna .taqdir .kapkapi\n.taarifcommit .captioncontest .zyadasocha .ghazab\n.onlinedekhna .dushmankadushman .buraanamano .mirrormirror\n.merahero .natkhat .pareshan .interview .kheltamam\n.rishtapakka .pyaardukaan .zabaansambhlo .jhootawada\n.sonawala .gossip .funnyrishtedar .aankheband .alvidanahi\n.siyaanibaat .muftadvice .nakhrebaaz\n\n*Games & Tools:*\n.personalitytest .superpower .pastlife .darksecret\n.celebmatch .lifebattery .desimom .desidad .khanajudge\n.rishtaaunt .challenge .friendtype .pakoraweather\n.result .cricketcomm .shadiprediction .stresslevel\n.motivationalslap .wikifact .animepersonality .weathermood\n.taunt .gharkawifi .lovecalc2 .problems .hugkr\n.mildroast .wisdomcookie .monsterenergy .socialmedia\n.whatanimal .typingspeed .nightowl .pizzaorbiryani\n.emotionaldamage .complainbox .numbergame .coinflip\n.naammatlab .compliment2 .examseason .pakfact\n.storygenerate .botroast .weeklyreport .soulcolor\n.shukria .desiwisdom .kindness .newcmds\n.pyaarstatus .shipname .aajkadil\n\n💡 *Tip:* Reply to someone's message before the command\nto mention THEM (once). No reply = no mentions!\n\n> *ERFAN-MD Fun v2* 🎪`);
+  } catch (e) { reply(`❌ Error: ${e.message}`); }
 });
