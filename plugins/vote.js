@@ -1,12 +1,23 @@
 // chvote.js
 // .vote <channel_post_url> <option>
 //
-// Channel poll par bot ke apne account se vote karta hai.
-// Vote ek plaintext <message type="poll"> stanza hota hai (channels E2E encrypted nahi hote):
+// Channel poll par bot ke apne account se vote karta hai aur phir WhatsApp se confirm karta hai.
+//
+// Vote stanza (plaintext, kyunki channels E2E encrypted nahi hote):
 //   <message to="CHANNEL@newsletter" id=".." server_id="POLL_SERVER_ID" type="poll">
 //     <meta polltype="vote"/>
 //     <votes><vote>{32-byte sha256(optionName)}</vote></votes>
 //   </message>
+//
+// Poll padhna (options ke naam + tally):
+//   <iq to="s.whatsapp.net" xmlns="newsletter" type="get">
+//     <messages type="jid" jid="CHANNEL@newsletter" count="N" before="M"/>
+//   </iq>
+//
+// Apna vote wapas padhna (confirm ke liye):
+//   <iq to="s.whatsapp.net" xmlns="newsletter" type="get">
+//     <my_addons limit="20" jid="CHANNEL@newsletter"/>
+//   </iq>
 
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
@@ -14,6 +25,8 @@ import { proto } from '@whiskeysockets/baileys';
 import { cmd } from '../command.js';
 
 const __filename = fileURLToPath(import.meta.url);
+const WA_SERVER = 's.whatsapp.net';
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // ===============================
 // VALIDATE CHANNEL POST URL
@@ -37,7 +50,7 @@ function extractIdsFromUrl(url) {
 // ===============================
 // PARSE OPTION INPUT
 // A / B / C ...  or 1 / 2 / 3 ...  or A,C (multi)  -> mode "index"
-// anything else                                     -> mode "name" (exact option text)
+// anything else                                     -> mode "name" (option ka text)
 // ===============================
 function parseOptionInput(raw) {
     const input = (raw || '').trim();
@@ -56,19 +69,19 @@ function parseOptionInput(raw) {
         return { mode: 'index', indexes };
     }
 
-    // exact option name (optionally written as =Option name)
     const name = input.startsWith('=') ? input.slice(1).trim() : input;
     if (!name) return null;
     return { mode: 'name', names: [name] };
 }
 
 // ===============================
-// SHA-256 OF OPTION NAME (raw 32 bytes)
-// Text ko bilkul waisa hi hash karna hai jaisa poll mein hai (normalize nahi karna)
+// HASH HELPERS
+// sha256 of the exact option name (normalize nahi karna)
 // ===============================
 function hashOption(name) {
     return crypto.createHash('sha256').update(Buffer.from(name, 'utf8')).digest();
 }
+const toHex = (bytes) => Buffer.from(bytes).toString('hex');
 
 // ===============================
 // BINARY NODE HELPERS
@@ -85,6 +98,18 @@ function collectTags(node) {
     const tags = new Set();
     walkNodes(node, n => tags.add(n.tag));
     return [...tags];
+}
+
+function childOf(node, tag) {
+    return Array.isArray(node?.content) ? node.content.find(c => c?.tag === tag) : undefined;
+}
+
+function votesOf(messageNode) {
+    const votesNode = childOf(messageNode, 'votes');
+    if (!votesNode || !Array.isArray(votesNode.content)) return [];
+    return votesNode.content
+        .filter(v => v?.tag === 'vote' && v.content)
+        .map(v => ({ hash: toHex(v.content), count: parseInt(v.attrs?.count || '0', 10) || 0 }));
 }
 
 // poll object dhoondo (pollCreationMessage / V2 / V3 / V4(future proof) / V5)
@@ -106,16 +131,14 @@ function findPollCreation(obj, depth = 0) {
     return null;
 }
 
-// fetch result ke andar se post ID wala poll nikalo
+// history response ke andar se post ID wala poll nikalo (options + tally)
 function extractPollFromResult(result, postId) {
     let poll = null;
     walkNodes(result, node => {
         if (poll || node.tag !== 'message') return;
         if (String(node.attrs?.server_id) !== String(postId)) return;
 
-        const plain = Array.isArray(node.content)
-            ? node.content.find(c => c?.tag === 'plaintext')
-            : null;
+        const plain = childOf(node, 'plaintext');
         if (!plain || !plain.content) return;
 
         try {
@@ -126,7 +149,8 @@ function extractPollFromResult(result, postId) {
                 poll = {
                     name: creation.name || '',
                     options: creation.options.map(o => o.optionName || ''),
-                    selectableCount: creation.selectableOptionsCount || 0
+                    selectableCount: creation.selectableOptionsCount || 0,
+                    tallies: votesOf(node)
                 };
             }
         } catch {}
@@ -135,31 +159,26 @@ function extractPollFromResult(result, postId) {
 }
 
 // ===============================
-// FETCH POLL (options ke naam)
+// FETCH POLL (options ke naam + tally)
 // ===============================
-async function fetchPoll(conn, jid, postId) {
+async function fetchChannelPoll(conn, jid, postId) {
     const idNum = Number(postId);
     const seenTags = new Set();
+    let lastError = null;
 
-    const attempts = [
-        () => conn.newsletterFetchMessages(jid, 5, undefined, idNum - 1),
-        () => conn.newsletterFetchMessages(jid, 30, undefined, undefined),
-        () => conn.query({
-            tag: 'iq',
-            attrs: { id: conn.generateMessageTag(), type: 'get', xmlns: 'newsletter', to: jid },
-            content: [{ tag: 'messages', attrs: { type: 'jid', jid, count: '5', after: String(idNum - 1) } }]
-        }),
-        () => conn.query({
-            tag: 'iq',
-            attrs: { id: conn.generateMessageTag(), type: 'get', xmlns: 'newsletter', to: jid },
-            content: [{ tag: 'messages', attrs: { type: 'jid', jid, count: '30' } }]
-        })
+    const variants = [
+        { count: '1', before: String(idNum + 1) },
+        { count: '20', before: String(idNum + 1) },
+        { count: '50' }
     ];
 
-    let lastError = null;
-    for (const attempt of attempts) {
+    for (const v of variants) {
         try {
-            const result = await attempt();
+            const result = await conn.query({
+                tag: 'iq',
+                attrs: { id: conn.generateMessageTag(), to: WA_SERVER, xmlns: 'newsletter', type: 'get' },
+                content: [{ tag: 'messages', attrs: { type: 'jid', jid, ...v } }]
+            });
             collectTags(result).forEach(t => seenTags.add(t));
             const poll = extractPollFromResult(result, postId);
             if (poll) return { poll, seenTags: [...seenTags], lastError: null };
@@ -171,18 +190,34 @@ async function fetchPoll(conn, jid, postId) {
 }
 
 // ===============================
-// SEND VOTE
+// READ MY OWN VOTE (confirmation)
+// returns array of hex hashes, or null if nothing found
 // ===============================
-async function sendPollVote(conn, jid, postId, optionNames) {
-    const stanzaId = typeof conn.generateMessageTag === 'function'
-        ? conn.generateMessageTag()
-        : crypto.randomBytes(8).toString('hex').toUpperCase();
+async function readMyVote(conn, jid, postId) {
+    const result = await conn.query({
+        tag: 'iq',
+        attrs: { id: conn.generateMessageTag(), to: WA_SERVER, xmlns: 'newsletter', type: 'get' },
+        content: [{ tag: 'my_addons', attrs: { limit: '50', jid } }]
+    });
 
-    await conn.query({
+    let hashes = null;
+    walkNodes(result, node => {
+        if (node.tag !== 'message') return;
+        if (String(node.attrs?.server_id) !== String(postId)) return;
+        hashes = votesOf(node).map(v => v.hash);
+    });
+    return { hashes, tags: collectTags(result) };
+}
+
+// ===============================
+// SEND VOTE  (returns the server ack node)
+// ===============================
+async function sendPollVote(conn, jid, postId, hashes) {
+    return conn.query({
         tag: 'message',
         attrs: {
             to: jid,
-            id: stanzaId,
+            id: conn.generateMessageTag(),
             server_id: String(postId),
             type: 'poll'
         },
@@ -191,11 +226,10 @@ async function sendPollVote(conn, jid, postId, optionNames) {
             {
                 tag: 'votes',
                 attrs: {},
-                content: optionNames.map(name => ({ tag: 'vote', attrs: {}, content: hashOption(name) }))
+                content: hashes.map(h => ({ tag: 'vote', attrs: {}, content: h }))
             }
         ]
     });
-    return stanzaId;
 }
 
 // ===============================
@@ -213,15 +247,21 @@ const USAGE = `╭──「 *🗳️ VOTE COMMAND USAGE* 」
 │ 1. .vote https://whatsapp.com/channel/xxx/123 A
 │ 2. .vote https://whatsapp.com/channel/xxx/123 B
 │
-│ *If options can't be fetched, type exact option text:*
+│ *Or type the option text:*
 │ .vote link =Option text
 ╰─────────────────`;
+
+const fmtTallies = (poll) =>
+    poll.options.map((o, i) => {
+        const t = poll.tallies.find(x => x.hash === toHex(hashOption(o)));
+        return `${String.fromCharCode(65 + i)}. ${o} → ${t ? t.count : 0}`;
+    }).join('\n');
 
 // ===============================
 // VOTE COMMAND
 // ===============================
 cmd({
-    pattern: "vote",
+    pattern: "xvote",
     alias: ["chvote", "pollvote"],
     react: "🗳️",
     desc: "Vote on a WhatsApp channel poll",
@@ -266,17 +306,13 @@ ${USAGE}`);
         const jid = channelMeta.id;
         const channelName = channelMeta.name || channelMeta.thread_metadata?.name?.text || ids.channelId;
 
-        // Decide which option names to vote for
+        // Poll padho (options ke naam + current tally)
+        const { poll, seenTags, lastError } = await fetchChannelPoll(conn, jid, ids.postId);
+
         let optionNames = [];
         let optionLabels = [];
-        let pollTitle = '';
 
-        if (parsed.mode === 'name') {
-            optionNames = parsed.names;
-            optionLabels = parsed.names;
-        } else {
-            const { poll, seenTags, lastError } = await fetchPoll(conn, jid, ids.postId);
-
+        if (parsed.mode === 'index') {
             if (!poll) {
                 await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
                 return reply(`❌ *Poll options could not be fetched!*
@@ -289,36 +325,84 @@ Type the exact option text instead:
 .vote ${url} =Option text`);
             }
 
-            pollTitle = poll.name;
-
             for (const idx of parsed.indexes) {
                 if (idx > poll.options.length) {
                     await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
-                    const list = poll.options.map((o, i) => `${String.fromCharCode(65 + i)}. ${o}`).join('\n');
-                    return reply(`❌ *Option ${String.fromCharCode(64 + idx)} does not exist!*\n\n*Poll options:*\n${list}`);
+                    return reply(`❌ *Option ${String.fromCharCode(64 + idx)} does not exist!*\n\n*Poll options:*\n${fmtTallies(poll)}`);
                 }
                 optionNames.push(poll.options[idx - 1]);
                 optionLabels.push(`${String.fromCharCode(64 + idx)}. ${poll.options[idx - 1]}`);
             }
-
-            if (poll.selectableCount === 1 && optionNames.length > 1) {
-                await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
-                return reply('❌ *This poll allows only one option!*');
+        } else {
+            // name mode: agar poll mila to asli option se match karo (case-insensitive)
+            for (const typed of parsed.names) {
+                if (poll) {
+                    const i = poll.options.findIndex(o => o.trim().toLowerCase() === typed.trim().toLowerCase());
+                    if (i === -1) {
+                        await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+                        return reply(`❌ *No option named "${typed}" in this poll!*\n\n*Poll options:*\n${fmtTallies(poll)}`);
+                    }
+                    optionNames.push(poll.options[i]);
+                    optionLabels.push(`${String.fromCharCode(65 + i)}. ${poll.options[i]}`);
+                } else {
+                    optionNames.push(typed);
+                    optionLabels.push(typed);
+                }
             }
         }
 
-        // Send vote
-        await sendPollVote(conn, jid, ids.postId, optionNames);
+        if (poll && poll.selectableCount === 1 && optionNames.length > 1) {
+            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+            return reply('❌ *This poll allows only one option!*');
+        }
 
-        await reply(`✅ *Vote sent successfully!*
+        // Vote bhejo
+        const hashes = optionNames.map(hashOption);
+        const ack = await sendPollVote(conn, jid, ids.postId, hashes);
+
+        // Confirm: apna vote WhatsApp se wapas padho
+        await sleep(2000);
+        let confirmed = false;
+        let readback = null;
+        try {
+            readback = await readMyVote(conn, jid, ids.postId);
+            const mine = readback.hashes || [];
+            confirmed = hashes.length > 0 && hashes.every(h => mine.includes(toHex(h)));
+        } catch (e) {
+            readback = { error: e.message };
+        }
+
+        // Naya tally
+        let after = null;
+        try {
+            after = (await fetchChannelPoll(conn, jid, ids.postId)).poll;
+        } catch {}
+
+        const ackInfo = ack?.attrs ? JSON.stringify(ack.attrs) : 'no ack';
+
+        if (confirmed) {
+            await reply(`✅ *Vote confirmed by WhatsApp!*
 
 📊 *Details:*
 🎯 *Channel:* ${channelName}
 📝 *Post:* ${ids.postId}
-${pollTitle ? `❓ *Poll:* ${pollTitle}\n` : ''}🗳️ *Voted:* ${optionLabels.join(', ')}
-
+${poll?.name ? `❓ *Poll:* ${poll.name}\n` : ''}🗳️ *Voted:* ${optionLabels.join(', ')}
+${after ? `\n📈 *Votes now:*\n${fmtTallies(after)}\n` : ''}
 > *Powered By ERFAN*`);
-        await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+            await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+        } else {
+            await conn.sendMessage(from, { react: { text: '⚠️', key: m.key } });
+            await reply(`⚠️ *Vote sent, but WhatsApp did NOT register it.*
+
+🎯 *Channel:* ${channelName}
+📝 *Post:* ${ids.postId}
+🗳️ *Tried:* ${optionLabels.join(', ')}
+
+*Server ack:* ${ackInfo}
+*My vote on server:* ${readback?.error ? 'error: ' + readback.error : (readback?.hashes ? readback.hashes.length + ' vote(s) found, not matching' : 'none')}
+${after ? `\n📈 *Votes now:*\n${fmtTallies(after)}\n` : ''}
+_Note: channel owner ka account apne hi channel ke poll par vote shayad na kar sake. Kisi doosre account/channel par test karo._`);
+        }
 
     } catch (error) {
         console.error("Vote error:", error);
