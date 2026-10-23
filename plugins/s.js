@@ -3,57 +3,70 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import { cmd } from '../command.js';
 import axios from 'axios';
+import yts from 'yt-search';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 cmd({
   pattern: "play",
-  desc: "Search and download a song by name.",
+  desc: "Search YouTube and download MP3 via Delirius API.",
   category: "downloader",
   filename: __filename
 }, async (conn, m, store, { from, quoted, q, reply }) => {
   try {
-    if (!q) return reply("❌ Please provide a song name.\nExample: .play Aashiq Banaya Aapne");
+    if (!q) return reply("❌ Please provide a song name.\nExample: .play Pal Pal");
 
     await conn.sendMessage(from, { react: { text: "⏳", key: m.key } });
 
-    // 1) API se search
-    const apiUrl = `https://api.nexray.eu.cc/downloader/ytplay?q=${encodeURIComponent(q)}`;
-    const response = await axios.get(apiUrl, { timeout: 30000 });
-    const data = response.data;
+    // 1) Search YouTube
+    const search = await yts(q);
+    const video = search.videos?.[0];
 
-    if (!data || !data.status || !data.result || !data.result.download_url) {
+    if (!video) {
       await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
-      return reply("⚠️ No results found.");
+      return reply("⚠️ No results found for the given song name.");
     }
 
-    const song = data.result;
-    const safeTitle = (song.title || 'song').replace(/[\\/:*?"<>|]/g, '_');
+    const videoUrl = video.url;
+    console.log("[PLAY] Found video:", video.title, "|", videoUrl);
 
-    // 2) Thumbnail + caption
+    // 2) Call Delirius API for MP3
+    const apiUrl = `https://api.delirius.online/download/ytmp3?url=${encodeURIComponent(videoUrl)}`;
+    const apiRes = await axios.get(apiUrl, { timeout: 30000 });
+    const data = apiRes.data;
+
+    if (!data || !data.status || !data.data || !data.data.download) {
+      await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
+      return reply("⚠️ Failed to get download link from API.");
+    }
+
+    const song = data.data;
+
+    // 3) Build caption
     const caption = `╭─────────────🎵
 │ 🎧 *SONG DOWNLOADER*
 │─────────────────────
 │ 🎵 *Title:* ${song.title}
-│ 👤 *Channel:* ${song.channel}
-│ ⏱️ *Duration:* ${song.duration}
+│ 👤 *Author:* ${song.author}
 │ 👀 *Views:* ${song.views}
-│ 📅 *Uploaded:* ${song.upload_at}
-│ 🔗 *YT URL:* ${song.url}
+│ 👍 *Likes:* ${song.likes}
+│ 🎼 *Format:* ${song.format}
+│ 🔗 *YT URL:* ${videoUrl}
 ╰─────────────🎵
-🔗 *Powered By DARKZONE-AI*`;
+🔗 *Powered By ERFAN-MD*`;
 
+    // 4) Send thumbnail + caption
     await conn.sendMessage(from, {
-      image: { url: song.thumbnail },
+      image: { url: song.image },
       caption: caption
     }, { quoted: m });
 
-    // 3) FIX: MP3 khud download karo → buffer → audio bhejo (link nahi)
-    const audioRes = await axios.get(song.download_url, {
+    // 5) Download MP3 to buffer
+    const audioRes = await axios.get(song.download, {
       responseType: 'arraybuffer',
       timeout: 60000,
-      maxContentLength: 100 * 1024 * 1024, // 100 MB
+      maxContentLength: 100 * 1024 * 1024,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Referer': 'https://www.youtube.com/',
@@ -68,6 +81,9 @@ cmd({
       return reply("❌ Downloaded file is empty. Please try another song.");
     }
 
+    const safeTitle = (song.title || 'song').replace(/[\\/:*?"<>|]/g, '_');
+
+    // 6) Send audio
     await conn.sendMessage(from, {
       audio: audioBuffer,
       mimetype: 'audio/mpeg',
