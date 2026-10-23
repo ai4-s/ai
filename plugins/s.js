@@ -10,12 +10,12 @@ const __dirname = path.dirname(__filename);
 
 cmd({
   pattern: "play",
-  desc: "Search YouTube and download MP3 via Delirius API.",
+  desc: "Search YouTube and download MP3 via Starlights API.",
   category: "downloader",
   filename: __filename
 }, async (conn, m, store, { from, quoted, q, reply }) => {
   try {
-    if (!q) return reply("❌ Please provide a song name.\nExample: .play Pal Pal");
+    if (!q) return reply("❌ Please provide a song name.\nExample: .play Eshq Tanha");
 
     await conn.sendMessage(from, { react: { text: "⏳", key: m.key } });
 
@@ -31,12 +31,12 @@ cmd({
     const videoUrl = video.url;
     console.log("[PLAY] Found video:", video.title, "|", videoUrl);
 
-    // 2) Call Delirius API for MP3
-    const apiUrl = `https://api.delirius.online/download/ytmp3?url=${encodeURIComponent(videoUrl)}`;
+    // 2) Call Starlights API for MP3
+    const apiUrl = `https://api.starlights.uk/api/download/ytmp3?url=${encodeURIComponent(videoUrl)}`;
     const apiRes = await axios.get(apiUrl, { timeout: 30000 });
     const data = apiRes.data;
 
-    if (!data || !data.status || !data.data || !data.data.download) {
+    if (!data || !data.status || !data.data || !data.data.dl_url) {
       await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
       return reply("⚠️ Failed to get download link from API.");
     }
@@ -44,26 +44,28 @@ cmd({
     const song = data.data;
 
     // 3) Build caption
+    const minutes = Math.floor(song.duration / 60);
+    const seconds = song.duration % 60;
+    const durationStr = `${minutes}:${String(seconds).padStart(2, '0')}`;
+
     const caption = `╭─────────────🎵
 │ 🎧 *SONG DOWNLOADER*
 │─────────────────────
 │ 🎵 *Title:* ${song.title}
-│ 👤 *Author:* ${song.author}
-│ 👀 *Views:* ${song.views}
-│ 👍 *Likes:* ${song.likes}
-│ 🎼 *Format:* ${song.format}
-│ 🔗 *YT URL:* ${videoUrl}
+│ ⏱️ *Duration:* ${durationStr}
+│ 🎼 *Quality:* ${song.quality}
+│ 🔗 *YT URL:* ${song.url}
 ╰─────────────🎵
 🔗 *Powered By ERFAN-MD*`;
 
     // 4) Send thumbnail + caption
     await conn.sendMessage(from, {
-      image: { url: song.image },
+      image: { url: song.thumbnail },
       caption: caption
     }, { quoted: m });
 
     // 5) Download MP3 to buffer
-    const audioRes = await axios.get(song.download, {
+    const audioRes = await axios.get(song.dl_url, {
       responseType: 'arraybuffer',
       timeout: 60000,
       maxContentLength: 100 * 1024 * 1024,
