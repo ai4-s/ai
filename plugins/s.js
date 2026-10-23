@@ -1,4 +1,4 @@
-// ERFAN-MD — DEBUG
+// ERFAN-MD
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { cmd } from '../command.js';
@@ -13,30 +13,25 @@ cmd({
   category: "downloader",
   filename: __filename
 }, async (conn, m, store, { from, quoted, q, reply }) => {
-  let step = "start";
   try {
     if (!q) return reply("❌ Please provide a song name.\nExample: .play Aashiq Banaya Aapne");
 
     await conn.sendMessage(from, { react: { text: "⏳", key: m.key } });
 
-    // STEP 1: API call
-    step = "api-call";
+    // 1) API se search
     const apiUrl = `https://api.nexray.eu.cc/downloader/ytplay?q=${encodeURIComponent(q)}`;
-    console.log("[PLAY] STEP 1 → API URL:", apiUrl);
-
     const response = await axios.get(apiUrl, { timeout: 30000 });
     const data = response.data;
-    console.log("[PLAY] STEP 1 OK → status:", data?.status, "| has result:", !!data?.result);
 
-    if (!data || !data.status || !data.result) {
+    if (!data || !data.status || !data.result || !data.result.download_url) {
+      await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
       return reply("⚠️ No results found.");
     }
 
     const song = data.result;
-    console.log("[PLAY] Thumbnail URL:", song.thumbnail);
-    console.log("[PLAY] Download URL:", song.download_url);
-    console.log("[PLAY] Title:", song.title);
+    const safeTitle = (song.title || 'song').replace(/[\\/:*?"<>|]/g, '_');
 
+    // 2) Thumbnail + caption
     const caption = `╭─────────────🎵
 │ 🎧 *SONG DOWNLOADER*
 │─────────────────────
@@ -49,35 +44,42 @@ cmd({
 ╰─────────────🎵
 🔗 *Powered By DARKZONE-AI*`;
 
-    // STEP 2: Thumbnail bhejo
-    step = "send-thumbnail";
-    console.log("[PLAY] STEP 2 → Sending thumbnail...");
     await conn.sendMessage(from, {
       image: { url: song.thumbnail },
       caption: caption
     }, { quoted: m });
-    console.log("[PLAY] STEP 2 OK → thumbnail sent");
 
-    // STEP 3: Audio bhejo
-    step = "send-audio";
-    console.log("[PLAY] STEP 3 → Sending audio...");
+    // 3) FIX: MP3 khud download karo → buffer → audio bhejo (link nahi)
+    const audioRes = await axios.get(song.download_url, {
+      responseType: 'arraybuffer',
+      timeout: 60000,
+      maxContentLength: 100 * 1024 * 1024, // 100 MB
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://www.youtube.com/',
+        'Accept': '*/*'
+      }
+    });
+
+    const audioBuffer = Buffer.from(audioRes.data);
+
+    if (!audioBuffer || audioBuffer.length < 1000) {
+      await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
+      return reply("❌ Downloaded file is empty. Please try another song.");
+    }
+
     await conn.sendMessage(from, {
-      audio: { url: song.download_url },
+      audio: audioBuffer,
       mimetype: 'audio/mpeg',
-      fileName: `${(song.title || 'song').replace(/[\\/:*?"<>|]/g, '_')}.mp3`,
+      fileName: `${safeTitle}.mp3`,
       ptt: false
     }, { quoted: m });
-    console.log("[PLAY] STEP 3 OK → audio sent");
 
     await conn.sendMessage(from, { react: { text: "✅", key: m.key } });
 
   } catch (error) {
-    console.error(`[PLAY] ❌ FAILED AT STEP: ${step}`);
-    console.error("[PLAY] Error name:", error?.name);
-    console.error("[PLAY] Error message:", error?.message);
-    console.error("[PLAY] Error stack:", error?.stack);
-
+    console.error("Play Error:", error?.message || error);
     await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
-    reply(`❌ Failed at *${step}*\n\nReason: ${error?.message || 'unknown'}`);
+    reply(`❌ An error occurred: ${error?.message || 'unknown'}`);
   }
 });
