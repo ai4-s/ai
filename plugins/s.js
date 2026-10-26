@@ -1,375 +1,214 @@
-// ERFAN-MD
+// ERFAN MD 
 import { fileURLToPath } from 'url';
-import path from 'path';
 import { cmd } from '../command.js';
 import axios from 'axios';
-import yts from 'yt-search';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
-const API_BASE = 'https://rimi-xi.vercel.app/api';
+// ── Primary API (confirmed AUDIO / MP3 endpoint) ─────────────
+const NEW_API_BASE = "https://rimi-xi.vercel.app";
+const NEW_AUDIO_ENDPOINT = `${NEW_API_BASE}/api/ytmp3`;
 
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+// ── Legacy API base (silent audio fallback) ─────────────────
+const OLD_API_BASE = "https://xjawadtechyt.vercel.app";
 
-// Different header sets are tried in turn, because some download hosts reject a fake Referer
-const HEADER_SETS = [
-  { 'User-Agent': UA, 'Accept': '*/*' },
-  { 'User-Agent': UA, 'Referer': 'https://www.youtube.com/', 'Accept': '*/*' },
-  {}
+const toSmallCaps = (text) => {
+    const map = {
+        'a': 'ᴀ', 'b': 'ʙ', 'c': 'ᴄ', 'd': 'ᴅ', 'e': 'ᴇ', 'f': 'ғ', 'g': 'ɢ', 'h': 'ʜ', 'i': 'ɪ', 'j': 'ᴊ',
+        'k': 'ᴋ', 'l': 'ʟ', 'm': 'ᴍ', 'n': 'ɴ', 'o': 'ᴏ', 'p': 'ᴘ', 'q': 'ǫ', 'r': 'ʀ', 's': 's', 't': 'ᴛ',
+        'u': 'ᴜ', 'v': 'ᴠ', 'w': 'ᴡ', 'x': 'x', 'y': 'ʏ', 'z': 'ᴢ'
+    };
+    return text.split('').map(c => map[c.toLowerCase()] || c).join('');
+};
+
+function getVideoId(url) {
+    if (!url || typeof url !== 'string') return null;
+    const patterns = [
+        /(?:youtube\.com\/watch\?.*v=)([a-zA-Z0-9_-]{11})/,
+        /(?:youtu\.be\/)([a-zA-Z0-9_-]{11})/,
+        /(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+        /(?:youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
+        /(?:youtube\.com\/live\/)([a-zA-Z0-9_-]{11})/,
+        /(?:youtube\.com\/v\/)([a-zA-Z0-9_-]{11})/,
+        /(?:m\.youtube\.com\/watch\?.*v=)([a-zA-Z0-9_-]{11})/,
+        /(?:youtube\.com\/watch\/)([a-zA-Z0-9_-]{11})/,
+        /(?:music\.youtube\.com\/watch\?.*v=)([a-zA-Z0-9_-]{11})/
+    ];
+    for (const pattern of patterns) {
+        const match = url.match(pattern);
+        if (match && match[1]) return match[1];
+    }
+    return null;
+}
+
+// ── Universal audio-URL extractor ─────────────────────────────
+// New API : { ok: true, download: "<string>" }        ← ytmp3 confirmed
+// Old API : { status: true, download: { url: "<string>" } }
+function parseAudioUrl(data) {
+    if (!data || typeof data !== 'object') return null;
+    if (data.ok && typeof data.download === 'string' && data.download.startsWith('http')) {
+        return data.download;
+    }
+    if (data.status && data.download?.url) return data.download.url;
+    if (typeof data.download === 'string' && data.download.startsWith('http')) return data.download;
+    if (data.download?.url) return data.download.url;
+    if (data.url && typeof data.url === 'string') return data.url;
+    return null;
+}
+
+// ============================================
+// AUDIO API CHAIN — new MP3 endpoint first, then legacy fallbacks
+// ============================================
+const getAudioAPIs = (url) => [
+    // ✅ PRIMARY — confirmed 128K MP3 endpoint
+    { name: 'Rimi-MP3', url: `${NEW_AUDIO_ENDPOINT}?url=${encodeURIComponent(url)}`, timeout: 30000 },
+
+    // 🛟 SILENT FALLBACKS — old audio APIs (if new one ever fails)
+    { name: 'Jawad-8', url: `${OLD_API_BASE}/yta8?url=${encodeURIComponent(url)}`, timeout: 25000 },
+    { name: 'Jawad-9', url: `${OLD_API_BASE}/yta9?url=${encodeURIComponent(url)}`, timeout: 25000 },
+    { name: 'Jawad-7', url: `${OLD_API_BASE}/yta7?url=${encodeURIComponent(url)}`, timeout: 25000 },
+    { name: 'Jawad-6', url: `${OLD_API_BASE}/yta6?url=${encodeURIComponent(url)}`, timeout: 25000 },
+    { name: 'Jawad-1', url: `${OLD_API_BASE}/yta1?url=${encodeURIComponent(url)}`, timeout: 25000 },
+    { name: 'Jawad-2', url: `${OLD_API_BASE}/yta2?url=${encodeURIComponent(url)}`, timeout: 25000 },
+    { name: 'Jawad-3', url: `${OLD_API_BASE}/yta3?url=${encodeURIComponent(url)}`, timeout: 25000 },
+    { name: 'Jawad-4', url: `${OLD_API_BASE}/yta4?url=${encodeURIComponent(url)}`, timeout: 25000 },
+    { name: 'Jawad-5', url: `${OLD_API_BASE}/yta5?url=${encodeURIComponent(url)}`, timeout: 25000 }
 ];
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-// ───────────────────────── helpers ─────────────────────────
-
-// Tag errors with the stage that failed so the reply says exactly where it broke
-function stageError(stage, err) {
-  const status = err?.response?.status;
-  const e = new Error(`${stage} failed${status ? ` (HTTP ${status})` : `: ${err?.message || 'unknown'}`}`);
-  e.stage = stage;
-  return e;
-}
-
-// ───────────────────────── fast search ─────────────────────────
-
-// Small in-memory cache so repeated queries are instant
-const SEARCH_CACHE = new Map();
-const CACHE_TTL = 10 * 60 * 1000;
-const CACHE_MAX = 100;
-
-function cacheGet(key) {
-  const hit = SEARCH_CACHE.get(key);
-  if (!hit) return null;
-  if (Date.now() - hit.t > CACHE_TTL) {
-    SEARCH_CACHE.delete(key);
-    return null;
-  }
-  return hit.v;
-}
-
-function cacheSet(key, value) {
-  if (SEARCH_CACHE.size >= CACHE_MAX) SEARCH_CACHE.delete(SEARCH_CACHE.keys().next().value);
-  SEARCH_CACHE.set(key, { v: value, t: Date.now() });
-}
-
-// Pull a video ID out of a pasted YouTube link (skips searching entirely)
-function extractVideoId(text) {
-  const m = text.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/)|music\.youtube\.com\/watch\?(?:.*&)?v=)([\w-]{11})/i);
-  return m ? m[1] : null;
-}
-
-function decodeJsonText(raw) {
-  if (!raw) return null;
-  try {
-    return JSON.parse(`"${raw}"`);
-  } catch {
-    return raw;
-  }
-}
-
-// Read the first video result straight from the YouTube results page (much lighter than yt-search)
-function parseFirstVideo(html) {
-  const m = html.match(/"videoRenderer":\{"videoId":"([\w-]{11})"/);
-  if (!m) return null;
-
-  const slice = html.slice(m.index, m.index + 8000);
-  const pick = (re) => slice.match(re)?.[1];
-
-  const title = decodeJsonText(pick(/"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"/));
-  const author = decodeJsonText(pick(/"ownerText":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"/));
-  const timestamp = pick(/"lengthText":.*?"simpleText":"([^"]+)"/);
-  const views = pick(/"viewCountText":\{"simpleText":"([^"]+)"/);
-
-  return {
-    videoId: m[1],
-    title,
-    author,
-    timestamp,
-    views: views ? views.replace(/\s*views?$/i, '') : null,
-    thumbnail: `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg`
-  };
-}
-
-async function fastSearch(query) {
-  // sp=EgIQAQ%3D%3D filters results to videos only
-  const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIQAQ%3D%3D`;
-  const res = await axios.get(url, {
-    timeout: 8000,
-    responseType: 'text',
-    headers: {
-      'User-Agent': UA,
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Cookie': 'CONSENT=YES+1; SOCS=CAI'
-    }
-  });
-  return parseFirstVideo(res.data);
-}
-
-// Search with cache -> pasted link -> fast scrape -> yt-search fallback
-async function searchVideo(q) {
-  const key = q.trim().toLowerCase();
-  const cached = cacheGet(key);
-  if (cached) return cached;
-
-  // A pasted link needs no search at all
-  const idFromLink = extractVideoId(q);
-  if (idFromLink) {
-    const v = {
-      videoId: idFromLink,
-      title: null,
-      author: null,
-      timestamp: null,
-      views: null,
-      thumbnail: `https://i.ytimg.com/vi/${idFromLink}/hqdefault.jpg`
-    };
-    cacheSet(key, v);
-    return v;
-  }
-
-  const t0 = Date.now();
-  let video = null;
-
-  try {
-    video = await fastSearch(q);
-    if (video) console.log(`[SEARCH] fast search ${Date.now() - t0}ms`);
-  } catch (err) {
-    console.error('[SEARCH] fast search failed:', err?.message);
-  }
-
-  // Fallback to yt-search if the fast path found nothing
-  if (!video) {
-    try {
-      const search = await yts(q);
-      const r = search.videos?.[0];
-      if (r) {
-        video = {
-          videoId: r.videoId,
-          title: r.title,
-          author: r.author?.name || null,
-          timestamp: r.timestamp || null,
-          views: r.views ? r.views.toLocaleString('en-US') : null,
-          thumbnail: r.thumbnail
-        };
-        console.log(`[SEARCH] yt-search fallback ${Date.now() - t0}ms`);
-      }
-    } catch (err) {
-      throw stageError('YouTube search', err);
-    }
-  }
-
-  if (video) cacheSet(key, video);
-  return video;
-}
-
-// ───────────────────────── API + download ─────────────────────────
-
-// Call the rimi-xi API (ytmp3 / ytmp4) with retries
-async function callApi(endpoint, videoId) {
-  // Same short-link format as the working API examples
-  const ytUrl = `https://youtu.be/${videoId}`;
-  const apiUrl = `${API_BASE}/${endpoint}?url=${encodeURIComponent(ytUrl)}`;
-  console.log(`[${endpoint}] API:`, apiUrl);
-
-  let lastErr;
-  for (let i = 1; i <= 3; i++) {
-    try {
-      const res = await axios.get(apiUrl, { timeout: 45000 });
-      const data = res.data;
-      if (data && data.ok && data.download) return data;
-      lastErr = new Error('API returned no download link');
-    } catch (err) {
-      console.error(`[${endpoint}] API attempt ${i} failed:`, err?.response?.status || err?.message);
-      lastErr = err;
-    }
-    if (i < 3) await sleep(2000);
-  }
-  throw stageError('API request', lastErr);
-}
-
-// Download the file to a buffer with retries and header fallbacks
-async function downloadBuffer(url, { timeout, maxBytes, minBytes }) {
-  let lastErr;
-  for (let i = 0; i < 3; i++) {
-    try {
-      const res = await axios.get(url, {
-        responseType: 'arraybuffer',
-        timeout,
-        maxContentLength: maxBytes,
-        maxBodyLength: maxBytes,
-        headers: HEADER_SETS[i % HEADER_SETS.length]
-      });
-      const buf = Buffer.from(res.data);
-      if (buf.length >= minBytes) return buf;
-      lastErr = new Error('file too small / empty');
-    } catch (err) {
-      console.error(`[DOWNLOAD] attempt ${i + 1} failed:`, err?.response?.status || err?.message);
-      lastErr = err;
-    }
-    if (i < 2) await sleep(2000);
-  }
-  throw stageError('File download', lastErr);
-}
-
-// ───────────────────────── .play ─────────────────────────
-
+// ============================================
+// COMMAND: play (Auto Audio Download — MP3)
+// ============================================
 cmd({
-  pattern: "play",
-  desc: "Search YouTube and download MP3 via ERFAN API.",
-  category: "downloader",
-  filename: __filename
-}, async (conn, m, store, { from, quoted, q, reply }) => {
-  try {
-    if (!q) return reply("❌ Please provide a song name.\nExample: .play Eshq Tanha");
-
-    await conn.sendMessage(from, { react: { text: "⏳", key: m.key } });
-
-    // 1) Search YouTube (fast path)
-    const video = await searchVideo(q);
-
-    if (!video) {
-      await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
-      return reply("⚠️ No results found for the given song name.");
-    }
-
-    console.log("[PLAY] Found:", video.title, "|", video.videoId);
-
-    // 2) Call ytmp3 API
-    const data = await callApi('ytmp3', video.videoId);
-
-    const title = data.title || video.title || 'song';
-    const thumbnail = data.thumbnail || video.thumbnail;
-    const quality = data.quality || '128K';
-    const durationStr = video.timestamp || 'N/A';
-
-    // 3) Start the download right away, so it runs while the caption is being sent
-    const audioPromise = downloadBuffer(data.download, {
-      timeout: 90000,
-      maxBytes: 100 * 1024 * 1024,
-      minBytes: 1000
-    });
-    audioPromise.catch(() => {}); // avoid unhandled rejection; real error is thrown at await below
-
-    // 4) Build + send caption
-    const caption = `╭─────────────🎵
-│ 🎧 *SONG DOWNLOADER*
-│─────────────────────
-│ 🎵 *Title:* ${title}
-│ ⏱️ *Duration:* ${durationStr}
-│ 🎼 *Quality:* ${quality}
-╰─────────────🎵
-🔗 *Powered By ERFAN-MD*`;
-
+    pattern: "play",
+    alias: ["song", "music", "audio"],
+    desc: "Download YouTube audio",
+    category: "download",
+    react: "🎧",
+    filename: __filename
+}, async (conn, mek, m, { from, text, reply }) => {
     try {
-      await conn.sendMessage(from, { image: { url: thumbnail }, caption }, { quoted: m });
+        // ── Validate input ─────────────────────────────────────
+        if (!text || !text.trim()) {
+            return reply(
+                "❌ *Please provide a song name or a YouTube URL.*\n\n" +
+                "📌 *Examples:*\n" +
+                "•  *.play Shape of You*\n" +
+                "•  *.play https://youtu.be/wSkXuqLAjow*"
+            );
+        }
+
+        const { default: yts } = await import('yt-search');
+
+        let vid = null;
+        let url = text.trim();
+
+        // ── Search / resolve video ─────────────────────────────
+        if (/^https?:\/\//i.test(url)) {
+            if (!/youtube\.com|youtu\.be/i.test(url)) {
+                return reply("❌ *Please provide a valid YouTube URL.*");
+            }
+            const videoId = getVideoId(url);
+            if (!videoId) {
+                return reply("❌ *Invalid YouTube URL. Please check the link and try again.*");
+            }
+            vid = await yts({ videoId });
+        } else {
+            const search = await yts(url);
+            if (!search?.videos?.length) {
+                return reply("❌ *No results found for your search. Try different keywords.*");
+            }
+            vid = search.videos[0];
+            url = vid.url;
+        }
+
+        if (!vid) return reply("❌ *No results found.*");
+
+        // ── Send info card ─────────────────────────────────────
+        await conn.sendMessage(from, {
+            image: { url: vid.thumbnail },
+            caption:
+                `🎧 *AUDIO DOWNLOADER (MP3)*\n` +
+                `╭━━❐━⪼\n` +
+                `┇๏ *Title*    : ${vid.title}\n` +
+                `┇๏ *Duration* : ${vid.timestamp || 'N/A'}\n` +
+                `┇๏ *Views*    : ${vid.views?.toLocaleString() || 'N/A'}\n` +
+                `┇๏ *Author*   : ${vid.author?.name || 'Unknown'}\n` +
+                `┇๏ *Quality*  : 128K MP3\n` +
+                `┇๏ *Status*   : Downloading...\n` +
+                `╰━━❑━⪼\n` +
+                `> Powered by ERFAN-MD`
+        }, { quoted: mek });
+
+        // ── Try each audio API ─────────────────────────────────
+        let success = false;
+        let lastError = 'No source responded';
+
+        for (const api of getAudioAPIs(url)) {
+            if (success) break;
+
+            try {
+                const { data } = await axios.get(api.url, {
+                    timeout: api.timeout,
+                    validateStatus: () => true,
+                    headers: { 'User-Agent': 'Mozilla/5.0' }
+                });
+
+                const audioUrl = parseAudioUrl(data);
+                if (!audioUrl) {
+                    lastError = `${api.name}: no download URL in response`;
+                    console.error(`⚠️ ${lastError}`);
+                    continue;
+                }
+
+                // ── Try 1: send as audio ───────────────────────
+                try {
+                    await conn.sendMessage(from, {
+                        audio: { url: audioUrl },
+                        mimetype: "audio/mpeg",
+                        fileName: `${vid.title}.mp3`,
+                        ptt: false
+                    }, { quoted: mek });
+                    success = true;
+                    break;
+                } catch (audioErr) {
+                    console.error(`⚠️ Audio send failed (${api.name}):`, audioErr.message);
+                }
+
+                // ── Try 2: send as document ────────────────────
+                try {
+                    await conn.sendMessage(from, {
+                        document: { url: audioUrl },
+                        mimetype: "audio/mpeg",
+                        fileName: `${vid.title}.mp3`
+                    }, { quoted: mek });
+                    success = true;
+                    break;
+                } catch (docErr) {
+                    console.error(`⚠️ Document send failed (${api.name}):`, docErr.message);
+                    lastError = `${api.name}: ${docErr.message}`;
+                }
+
+            } catch (e) {
+                console.error(`⚠️ API failed (${api.name}):`, e.message);
+                lastError = `${api.name}: ${e.message}`;
+            }
+        }
+
+        // ── Final result ───────────────────────────────────────
+        if (!success) {
+            await conn.sendMessage(from, { react: { text: '❌', key: m.key } }).catch(() => {});
+            return reply(
+                "❌ *All download sources failed.*\n\n" +
+                "🔁 *Please try again in a moment.*\n" +
+                `_Last error: ${lastError}_`
+            );
+        }
+
+        await conn.sendMessage(from, { react: { text: '✅', key: m.key } }).catch(() => {});
+
     } catch (err) {
-      console.error("[PLAY] Thumbnail send failed:", err?.message);
-      await reply(caption);
+        console.error("❌ PLAY ERROR:", err);
+        await conn.sendMessage(from, { react: { text: '❌', key: m.key } }).catch(() => {});
+        return reply("❌ *An unexpected error occurred. Please try again later.*");
     }
-
-    // 5) Wait for the MP3
-    const audioBuffer = await audioPromise;
-
-    const safeTitle = title.replace(/[\\/:*?"<>|]/g, '_');
-
-    // 6) Send audio
-    await conn.sendMessage(from, {
-      audio: audioBuffer,
-      mimetype: 'audio/mpeg',
-      fileName: `${safeTitle}.mp3`,
-      ptt: false
-    }, { quoted: m });
-
-    await conn.sendMessage(from, { react: { text: "✅", key: m.key } });
-
-  } catch (error) {
-    console.error("Play Error:", error?.message || error);
-    await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
-    reply(`❌ An error occurred: ${error?.message || 'unknown'}`);
-  }
-});
-
-
-
-
-// ───────────────────────── .video ─────────────────────────
-
-cmd({
-  pattern: "video",
-  desc: "Search YouTube and download MP4 via ERFAN API.",
-  category: "downloader",
-  filename: __filename
-}, async (conn, m, store, { from, quoted, q, reply }) => {
-  try {
-    if (!q) return reply("❌ Please provide a video name.\nExample: .video Yan Block 444");
-
-    await conn.sendMessage(from, { react: { text: "⏳", key: m.key } });
-
-    // 1) Search YouTube (fast path)
-    const video = await searchVideo(q);
-
-    if (!video) {
-      await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
-      return reply("⚠️ No results found for the given video name.");
-    }
-
-    console.log("[VIDEO] Found:", video.title, "|", video.videoId);
-
-    // 2) Call ytmp4 API
-    const data = await callApi('ytmp4', video.videoId);
-
-    const title = data.title || video.title || 'video';
-    const thumbnail = data.thumbnail || video.thumbnail;
-    const quality = data.quality || 'HD';
-    const author = video.author || data.author || 'Unknown';
-    const durationStr = video.timestamp || 'N/A';
-    const views = video.views || 'N/A';
-
-    // 3) Start the download right away, so it runs while the caption is being sent
-    const videoPromise = downloadBuffer(data.download, {
-      timeout: 180000,
-      maxBytes: 500 * 1024 * 1024,
-      minBytes: 10000
-    });
-    videoPromise.catch(() => {}); // avoid unhandled rejection; real error is thrown at await below
-
-    // 4) Build + send caption
-    const caption = `╭─────────────🎬
-│ 🎥 *VIDEO DOWNLOADER*
-│─────────────────────
-│ 🎬 *Title:* ${title}
-│ 👤 *Author:* ${author}
-│ ⏱️ *Duration:* ${durationStr}
-│ 👀 *Views:* ${views}
-│ 🎞️ *Quality:* ${quality}
-╰─────────────🎬
-🔗 *Powered By ERFAN-MD*`;
-
-    try {
-      await conn.sendMessage(from, { image: { url: thumbnail }, caption }, { quoted: m });
-    } catch (err) {
-      console.error("[VIDEO] Thumbnail send failed:", err?.message);
-      await reply(caption);
-    }
-
-    // 5) Wait for the MP4
-    const videoBuffer = await videoPromise;
-
-    const safeTitle = title.replace(/[\\/:*?"<>|]/g, '_');
-
-    // 6) Send video
-    await conn.sendMessage(from, {
-      video: videoBuffer,
-      mimetype: 'video/mp4',
-      fileName: `${safeTitle}.mp4`,
-      caption: `🎬 *${title}*\n🎞️ ${quality}\n🔗 *Powered By ERFAN-MD*`
-    }, { quoted: m });
-
-    await conn.sendMessage(from, { react: { text: "✅", key: m.key } });
-
-  } catch (error) {
-    console.error("Video Error:", error?.message || error);
-    await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
-    reply(`❌ An error occurred: ${error?.message || 'unknown'}`);
-  }
 });
