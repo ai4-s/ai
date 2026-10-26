@@ -8,6 +8,9 @@ const __filename = fileURLToPath(import.meta.url);
 // ── Single audio API (MP3) ────────────────────────────────────
 const AUDIO_API = "https://rimi-xi.vercel.app/api/ytmp3";
 
+// ── Max file size WhatsApp will accept (~60 MB safe) ──────────
+const MAX_FILE_SIZE = 60 * 1024 * 1024;
+
 // ── Extract YouTube video ID from any URL ────────────────────
 function getVideoId(url) {
     if (!url || typeof url !== 'string') return null;
@@ -26,6 +29,15 @@ function getVideoId(url) {
         if (m && m[1]) return m[1];
     }
     return null;
+}
+
+// ── Sanitize filename (remove illegal chars) ─────────────────
+function safeFileName(title) {
+    return (title || 'audio')
+        .replace(/[\\/:*?"<>|]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120) || 'audio';
 }
 
 // ── COMMAND: play ────────────────────────────────────────────
@@ -63,6 +75,10 @@ cmd({
                 return reply("❌ *Invalid YouTube URL. Please check the link and try again.*");
             }
             vid = await yts({ videoId });
+            if (!vid || !vid.title) {
+                return reply("❌ *Could not fetch video details. Please try again.*");
+            }
+            url = vid.url;
         } else {
             const search = await yts(url);
             if (!search?.videos?.length) {
@@ -88,7 +104,7 @@ cmd({
                 `┇๏ *Status*   : Downloading...\n` +
                 `╰━━❑━⪼\n` +
                 `> Powered by ERFAN-MD`
-        }, { quoted: mek });
+        }, { quoted: mek }).catch(() => {});
 
         // ── 4. Call the API ───────────────────────────────────
         const apiUrl = `${AUDIO_API}?url=${encodeURIComponent(url)}`;
@@ -121,38 +137,89 @@ cmd({
             return reply("❌ *API returned an invalid download link. Please try again.*");
         }
 
-        // ── 6. Send as audio (fallback: document) ─────────────
+        console.log(`⬇️ Fetching audio buffer from: ${audioUrl.slice(0, 100)}...`);
+
+        // ── 6. Download the audio as a buffer ─────────────────
+        let audioBuffer = null;
+
+        try {
+            const audioRes = await axios.get(audioUrl, {
+                responseType: 'arraybuffer',
+                timeout: 90000,
+                maxRedirects: 10,
+                validateStatus: (status) => status >= 200 && status < 300,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'audio/mpeg,audio/*;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Referer': 'https://www.youtube.com/',
+                    'Range': 'bytes=0-'
+                }
+            });
+
+            audioBuffer = Buffer.from(audioRes.data);
+
+            if (!audioBuffer || audioBuffer.length < 10000) {
+                throw new Error(`Buffer too small (${audioBuffer?.length || 0} bytes)`);
+            }
+
+            if (audioBuffer.length > MAX_FILE_SIZE) {
+                console.error(`❌ File too large: ${audioBuffer.length} bytes`);
+                await conn.sendMessage(from, { react: { text: '❌', key: m.key } }).catch(() => {});
+                return reply(
+                    "❌ *File is too large for WhatsApp (over 60 MB).*\n" +
+                    "🔁 *Please try a shorter song.*"
+                );
+            }
+
+            console.log(`✅ Audio buffer ready: ${(audioBuffer.length / 1024 / 1024).toFixed(2)} MB`);
+
+        } catch (dlErr) {
+            console.error('❌ Audio download failed:', dlErr.message);
+            await conn.sendMessage(from, { react: { text: '❌', key: m.key } }).catch(() => {});
+            return reply(
+                "❌ *Could not download the audio file.*\n" +
+                "🔁 *The link may have expired. Please try again.*"
+            );
+        }
+
+        const fileName = `${safeFileName(vid.title)}.mp3`;
+
+        // ── 7. Send the buffer as audio ───────────────────────
         let sent = false;
 
         try {
             await conn.sendMessage(from, {
-                audio: { url: audioUrl },
-                mimetype: "audio/mpeg",
-                fileName: `${vid.title}.mp3`,
+                audio: audioBuffer,
+                mimetype: 'audio/mpeg',
+                fileName: fileName,
                 ptt: false
             }, { quoted: mek });
             sent = true;
+            console.log('✅ Audio sent successfully (as audio)');
         } catch (audioErr) {
-            console.error("⚠️ Audio send failed:", audioErr.message);
+            console.error('⚠️ Buffer audio send failed:', audioErr.message);
         }
 
+        // ── 8. Fallback: send as document ─────────────────────
         if (!sent) {
             try {
                 await conn.sendMessage(from, {
-                    document: { url: audioUrl },
-                    mimetype: "audio/mpeg",
-                    fileName: `${vid.title}.mp3`
+                    document: audioBuffer,
+                    mimetype: 'audio/mpeg',
+                    fileName: fileName
                 }, { quoted: mek });
                 sent = true;
+                console.log('✅ Audio sent successfully (as document)');
             } catch (docErr) {
-                console.error("⚠️ Document send failed:", docErr.message);
+                console.error('⚠️ Document send failed:', docErr.message);
             }
         }
 
-        // ── 7. Final react ────────────────────────────────────
+        // ── 9. Final react ────────────────────────────────────
         if (!sent) {
             await conn.sendMessage(from, { react: { text: '❌', key: m.key } }).catch(() => {});
-            return reply("❌ *Failed to send the file. Please try again.*");
+            return reply("❌ *Failed to send the file after downloading. Please try again.*");
         }
 
         await conn.sendMessage(from, { react: { text: '✅', key: m.key } }).catch(() => {});
