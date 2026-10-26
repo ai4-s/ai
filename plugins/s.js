@@ -21,8 +21,6 @@ const HEADER_SETS = [
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// ───────────────────────── helpers ─────────────────────────
-
 // Tag errors with the stage that failed so the reply says exactly where it broke
 function stageError(stage, err) {
   const status = err?.response?.status;
@@ -30,139 +28,6 @@ function stageError(stage, err) {
   e.stage = stage;
   return e;
 }
-
-// ───────────────────────── fast search ─────────────────────────
-
-// Small in-memory cache so repeated queries are instant
-const SEARCH_CACHE = new Map();
-const CACHE_TTL = 10 * 60 * 1000;
-const CACHE_MAX = 100;
-
-function cacheGet(key) {
-  const hit = SEARCH_CACHE.get(key);
-  if (!hit) return null;
-  if (Date.now() - hit.t > CACHE_TTL) {
-    SEARCH_CACHE.delete(key);
-    return null;
-  }
-  return hit.v;
-}
-
-function cacheSet(key, value) {
-  if (SEARCH_CACHE.size >= CACHE_MAX) SEARCH_CACHE.delete(SEARCH_CACHE.keys().next().value);
-  SEARCH_CACHE.set(key, { v: value, t: Date.now() });
-}
-
-// Pull a video ID out of a pasted YouTube link (skips searching entirely)
-function extractVideoId(text) {
-  const m = text.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/)|music\.youtube\.com\/watch\?(?:.*&)?v=)([\w-]{11})/i);
-  return m ? m[1] : null;
-}
-
-function decodeJsonText(raw) {
-  if (!raw) return null;
-  try {
-    return JSON.parse(`"${raw}"`);
-  } catch {
-    return raw;
-  }
-}
-
-// Read the first video result straight from the YouTube results page (much lighter than yt-search)
-function parseFirstVideo(html) {
-  const m = html.match(/"videoRenderer":\{"videoId":"([\w-]{11})"/);
-  if (!m) return null;
-
-  const slice = html.slice(m.index, m.index + 8000);
-  const pick = (re) => slice.match(re)?.[1];
-
-  const title = decodeJsonText(pick(/"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"/));
-  const author = decodeJsonText(pick(/"ownerText":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"/));
-  const timestamp = pick(/"lengthText":.*?"simpleText":"([^"]+)"/);
-  const views = pick(/"viewCountText":\{"simpleText":"([^"]+)"/);
-
-  return {
-    videoId: m[1],
-    title,
-    author,
-    timestamp,
-    views: views ? views.replace(/\s*views?$/i, '') : null,
-    thumbnail: `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg`
-  };
-}
-
-async function fastSearch(query) {
-  // sp=EgIQAQ%3D%3D filters results to videos only
-  const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIQAQ%3D%3D`;
-  const res = await axios.get(url, {
-    timeout: 8000,
-    responseType: 'text',
-    headers: {
-      'User-Agent': UA,
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Cookie': 'CONSENT=YES+1; SOCS=CAI'
-    }
-  });
-  return parseFirstVideo(res.data);
-}
-
-// Search with cache -> pasted link -> fast scrape -> yt-search fallback
-async function searchVideo(q) {
-  const key = q.trim().toLowerCase();
-  const cached = cacheGet(key);
-  if (cached) return cached;
-
-  // A pasted link needs no search at all
-  const idFromLink = extractVideoId(q);
-  if (idFromLink) {
-    const v = {
-      videoId: idFromLink,
-      title: null,
-      author: null,
-      timestamp: null,
-      views: null,
-      thumbnail: `https://i.ytimg.com/vi/${idFromLink}/hqdefault.jpg`
-    };
-    cacheSet(key, v);
-    return v;
-  }
-
-  const t0 = Date.now();
-  let video = null;
-
-  try {
-    video = await fastSearch(q);
-    if (video) console.log(`[SEARCH] fast search ${Date.now() - t0}ms`);
-  } catch (err) {
-    console.error('[SEARCH] fast search failed:', err?.message);
-  }
-
-  // Fallback to yt-search if the fast path found nothing
-  if (!video) {
-    try {
-      const search = await yts(q);
-      const r = search.videos?.[0];
-      if (r) {
-        video = {
-          videoId: r.videoId,
-          title: r.title,
-          author: r.author?.name || null,
-          timestamp: r.timestamp || null,
-          views: r.views ? r.views.toLocaleString('en-US') : null,
-          thumbnail: r.thumbnail
-        };
-        console.log(`[SEARCH] yt-search fallback ${Date.now() - t0}ms`);
-      }
-    } catch (err) {
-      throw stageError('YouTube search', err);
-    }
-  }
-
-  if (video) cacheSet(key, video);
-  return video;
-}
-
-// ───────────────────────── API + download ─────────────────────────
 
 // Call the rimi-xi API (ytmp3 / ytmp4) with retries
 async function callApi(endpoint, videoId) {
@@ -182,7 +47,7 @@ async function callApi(endpoint, videoId) {
       console.error(`[${endpoint}] API attempt ${i} failed:`, err?.response?.status || err?.message);
       lastErr = err;
     }
-    if (i < 3) await sleep(2000);
+    if (i < 3) await sleep(2500);
   }
   throw stageError('API request', lastErr);
 }
@@ -206,12 +71,10 @@ async function downloadBuffer(url, { timeout, maxBytes, minBytes }) {
       console.error(`[DOWNLOAD] attempt ${i + 1} failed:`, err?.response?.status || err?.message);
       lastErr = err;
     }
-    if (i < 2) await sleep(2000);
+    if (i < 2) await sleep(2500);
   }
   throw stageError('File download', lastErr);
 }
-
-// ───────────────────────── .play ─────────────────────────
 
 cmd({
   pattern: "play",
@@ -224,15 +87,21 @@ cmd({
 
     await conn.sendMessage(from, { react: { text: "⏳", key: m.key } });
 
-    // 1) Search YouTube (fast path)
-    const video = await searchVideo(q);
+    // 1) Search YouTube
+    let video;
+    try {
+      const search = await yts(q);
+      video = search.videos?.[0];
+    } catch (err) {
+      throw stageError('YouTube search', err);
+    }
 
     if (!video) {
       await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
       return reply("⚠️ No results found for the given song name.");
     }
 
-    console.log("[PLAY] Found:", video.title, "|", video.videoId);
+    console.log("[PLAY] Found video:", video.title, "|", video.videoId);
 
     // 2) Call ytmp3 API
     const data = await callApi('ytmp3', video.videoId);
@@ -242,15 +111,7 @@ cmd({
     const quality = data.quality || '128K';
     const durationStr = video.timestamp || 'N/A';
 
-    // 3) Start the download right away, so it runs while the caption is being sent
-    const audioPromise = downloadBuffer(data.download, {
-      timeout: 90000,
-      maxBytes: 100 * 1024 * 1024,
-      minBytes: 1000
-    });
-    audioPromise.catch(() => {}); // avoid unhandled rejection; real error is thrown at await below
-
-    // 4) Build + send caption
+    // 3) Build caption
     const caption = `╭─────────────🎵
 │ 🎧 *SONG DOWNLOADER*
 │─────────────────────
@@ -260,6 +121,7 @@ cmd({
 ╰─────────────🎵
 🔗 *Powered By ERFAN-MD*`;
 
+    // 4) Send thumbnail + caption (a bad thumbnail must not kill the command)
     try {
       await conn.sendMessage(from, { image: { url: thumbnail }, caption }, { quoted: m });
     } catch (err) {
@@ -267,8 +129,12 @@ cmd({
       await reply(caption);
     }
 
-    // 5) Wait for the MP3
-    const audioBuffer = await audioPromise;
+    // 5) Download MP3 to buffer
+    const audioBuffer = await downloadBuffer(data.download, {
+      timeout: 90000,
+      maxBytes: 100 * 1024 * 1024,
+      minBytes: 1000
+    });
 
     const safeTitle = title.replace(/[\\/:*?"<>|]/g, '_');
 
@@ -292,8 +158,6 @@ cmd({
 
 
 
-// ───────────────────────── .video ─────────────────────────
-
 cmd({
   pattern: "video",
   desc: "Search YouTube and download MP4 via ERFAN API.",
@@ -305,15 +169,21 @@ cmd({
 
     await conn.sendMessage(from, { react: { text: "⏳", key: m.key } });
 
-    // 1) Search YouTube (fast path)
-    const video = await searchVideo(q);
+    // 1) Search YouTube
+    let video;
+    try {
+      const search = await yts(q);
+      video = search.videos?.[0];
+    } catch (err) {
+      throw stageError('YouTube search', err);
+    }
 
     if (!video) {
       await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
       return reply("⚠️ No results found for the given video name.");
     }
 
-    console.log("[VIDEO] Found:", video.title, "|", video.videoId);
+    console.log("[VIDEO] Found video:", video.title, "|", video.videoId);
 
     // 2) Call ytmp4 API
     const data = await callApi('ytmp4', video.videoId);
@@ -321,19 +191,11 @@ cmd({
     const title = data.title || video.title || 'video';
     const thumbnail = data.thumbnail || video.thumbnail;
     const quality = data.quality || 'HD';
-    const author = video.author || data.author || 'Unknown';
+    const author = video.author?.name || data.author || 'Unknown';
     const durationStr = video.timestamp || 'N/A';
-    const views = video.views || 'N/A';
+    const views = video.views ? video.views.toLocaleString('en-US') : 'N/A';
 
-    // 3) Start the download right away, so it runs while the caption is being sent
-    const videoPromise = downloadBuffer(data.download, {
-      timeout: 180000,
-      maxBytes: 500 * 1024 * 1024,
-      minBytes: 10000
-    });
-    videoPromise.catch(() => {}); // avoid unhandled rejection; real error is thrown at await below
-
-    // 4) Build + send caption
+    // 3) Build caption
     const caption = `╭─────────────🎬
 │ 🎥 *VIDEO DOWNLOADER*
 │─────────────────────
@@ -345,6 +207,7 @@ cmd({
 ╰─────────────🎬
 🔗 *Powered By ERFAN-MD*`;
 
+    // 4) Send thumbnail + caption
     try {
       await conn.sendMessage(from, { image: { url: thumbnail }, caption }, { quoted: m });
     } catch (err) {
@@ -352,8 +215,12 @@ cmd({
       await reply(caption);
     }
 
-    // 5) Wait for the MP4
-    const videoBuffer = await videoPromise;
+    // 5) Download MP4 to buffer
+    const videoBuffer = await downloadBuffer(data.download, {
+      timeout: 180000,
+      maxBytes: 500 * 1024 * 1024,
+      minBytes: 10000
+    });
 
     const safeTitle = title.replace(/[\\/:*?"<>|]/g, '_');
 
