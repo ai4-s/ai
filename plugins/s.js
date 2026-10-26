@@ -8,101 +8,31 @@ import yts from 'yt-search';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ============================================
-// HELPERS
-// ============================================
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const VIDEO_API = (url) => `https://rimi-xi.vercel.app/api/ytmp4?url=${encodeURIComponent(url)}`;
 
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+// ============================================
+// ONE call — exactly like your working example
+// ============================================
+async function getVideo(url) {
+  const apiUrl = VIDEO_API(url);
+  console.log('[API] GET', apiUrl);
 
-function getVideoId(url) {
-  if (!url || typeof url !== 'string') return null;
-  const patterns = [
-    /(?:youtube\.com\/watch\?.*v=)([a-zA-Z0-9_-]{11})/,
-    /(?:youtu\.be\/)([a-zA-Z0-9_-]{11})/,
-    /(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
-    /(?:youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
-    /(?:youtube\.com\/live\/)([a-zA-Z0-9_-]{11})/,
-    /(?:youtube\.com\/v\/)([a-zA-Z0-9_-]{11})/
-  ];
-  for (const p of patterns) {
-    const m = url.match(p);
-    if (m && m[1]) return m[1];
+  const res = await axios.get(apiUrl, { timeout: 45000, validateStatus: () => true });
+  console.log('[API] HTTP', res.status, '→', JSON.stringify(res.data).slice(0, 300));
+
+  const data = res.data;
+  if (res.status !== 200 || !data?.ok || !data?.download) {
+    const raw = JSON.stringify(data || {}).slice(0, 300);
+    throw new Error(`API HTTP ${res.status} → ${raw}`);
   }
-  return null;
+  return data;
 }
 
 // ============================================
-// FETCH with retry + BOTH url formats
+// Download to buffer — like your working code
 // ============================================
-async function fetchVideo(url) {
-  const vid = getVideoId(url);
-  if (!vid) throw new Error('Invalid YouTube URL');
-
-  // Try both formats — API sometimes works on one, not the other
-  const candidates = [
-    `https://youtu.be/${vid}`,
-    `https://www.youtube.com/watch?v=${vid}`
-  ];
-
-  let lastErr = null;
-
-  for (const format of candidates) {
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        console.log(`[ERFAN] try=${attempt} url=${format}`);
-        const res = await axios.get(VIDEO_API(format), {
-          timeout: 45000,
-          validateStatus: () => true,
-          headers: { 'User-Agent': UA, 'Accept': 'application/json' }
-        });
-
-        console.log(`[ERFAN] HTTP ${res.status} — ok=${res.data?.ok}`);
-
-        // ── SUCCESS ──
-        if (res.status === 200 && res.data?.ok && res.data?.download) {
-          return {
-            downloadUrl: res.data.download,
-            title: res.data.title || 'video',
-            thumbnail: res.data.thumbnail,
-            author: res.data.author,
-            quality: res.data.quality
-          };
-        }
-
-        // ── 502/503/504 = Vercel timeout, retry same format ──
-        if ([502, 503, 504].includes(res.status)) {
-          lastErr = new Error(`HTTP ${res.status} (Vercel timeout)`);
-          console.log(`[ERFAN] ${res.status} — retrying in 2s...`);
-          await new Promise(r => setTimeout(r, 2000));
-          continue;
-        }
-
-        // ── 200 but ok=false → video broken, no retry ──
-        if (res.status === 200 && !res.data?.ok) {
-          lastErr = new Error(`API rejected this video (ok=false)`);
-          break; // break inner loop, try other format
-        }
-
-        // ── other status → break to try other format ──
-        lastErr = new Error(`HTTP ${res.status}`);
-        break;
-
-      } catch (e) {
-        lastErr = e;
-        console.log(`[ERFAN] fetch error: ${e.message}`);
-        await new Promise(r => setTimeout(r, 1500));
-      }
-    }
-  }
-
-  throw lastErr || new Error('All API attempts failed');
-}
-
-// ============================================
-// DOWNLOAD to buffer (your working pattern)
-// ============================================
-async function downloadBuffer(url, maxMB = 500) {
+async function toBuffer(url, maxMB = 500) {
   const res = await axios.get(url, {
     responseType: 'arraybuffer',
     timeout: 120000,
@@ -114,9 +44,7 @@ async function downloadBuffer(url, maxMB = 500) {
     }
   });
   const buf = Buffer.from(res.data);
-  if (!buf || buf.length < 10000) {
-    throw new Error(`Downloaded file is empty (${buf.length} bytes)`);
-  }
+  if (!buf || buf.length < 10000) throw new Error(`File empty (${buf.length} bytes)`);
   return buf;
 }
 
@@ -135,44 +63,36 @@ cmd({
 
     await conn.sendMessage(from, { react: { text: "⏳", key: m.key } });
 
-    // 1) Search
     const search = await yts(q);
     const video = search.videos?.[0];
     if (!video) {
       await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
-      return reply("⚠️ No results found for the given video name.");
+      return reply("⚠️ No results found.");
     }
 
-    console.log("[VIDEO] Found:", video.title, "|", video.url);
+    console.log('[VIDEO] Found:', video.title, '|', video.url);
 
-    // 2) Fetch from API
-    const data = await fetchVideo(video.url);
+    const data = await getVideo(video.url);
 
-    // 3) Caption
-    const caption = `╭─────────────🎬
+    await conn.sendMessage(from, {
+      image: { url: data.thumbnail || video.thumbnail },
+      caption: `╭─────────────🎬
 │ 🎥 *VIDEO DOWNLOADER*
 │─────────────────────
 │ 🎬 *Title:* ${data.title}
 │ 👤 *Author:* ${data.author || video.author?.name || 'Unknown'}
 │ 🎞️ *Quality:* ${data.quality || 'HD'}
 ╰─────────────🎬
-🔗 *Powered By ERFAN-MD*`;
-
-    // 4) Thumbnail
-    await conn.sendMessage(from, {
-      image: { url: data.thumbnail || video.thumbnail },
-      caption
+🔗 *Powered By ERFAN-MD*`
     }, { quoted: m });
 
-    // 5) Download to buffer
-    const buffer = await downloadBuffer(data.downloadUrl);
-    const safeTitle = (data.title || 'video').replace(/[\\/:*?"<>|]/g, '_');
+    const buffer = await toBuffer(data.download);
+    const safe = (data.title || 'video').replace(/[\\/:*?"<>|]/g, '_');
 
-    // 6) Send video
     await conn.sendMessage(from, {
       video: buffer,
       mimetype: 'video/mp4',
-      fileName: `${safeTitle}.mp4`,
+      fileName: `${safe}.mp4`,
       caption: `🎬 *${data.title}*\n🎞️ ${data.quality || 'HD'}\n🔗 *Powered By ERFAN-MD*`
     }, { quoted: m });
 
@@ -181,7 +101,7 @@ cmd({
   } catch (error) {
     console.error("Video Error:", error?.message || error);
     await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
-    reply(`❌ An error occurred: ${error?.message || 'unknown'}`);
+    reply(`❌ ${error?.message || 'unknown error'}`);
   }
 });
 
@@ -191,7 +111,7 @@ cmd({
 cmd({
   pattern: "drama",
   alias: ["film", "series"],
-  desc: "Download YouTube drama as video or document.",
+  desc: "Download drama as video or document.",
   category: "downloader",
   filename: __filename
 }, async (conn, m, store, { from, quoted, q, reply }) => {
@@ -214,9 +134,9 @@ cmd({
 *├▢ 📺 Channel:* ${video.author?.name || 'Unknown'}
 *├▢ ⏰ Duration:* ${video.timestamp}
 *╰───────────────────⊷*
-*Reply with:*
+*Reply:*
 *┋ 1* 📹 Video (MP4)
-*┋ 2* 📄 Video as Document
+*┋ 2* 📄 Document
 
 > Powered by ERFAN-MD`
     }, { quoted: m });
@@ -239,8 +159,8 @@ cmd({
       }
 
       try {
-        const data = await fetchVideo(video.url);
-        const buffer = await downloadBuffer(data.downloadUrl);
+        const data = await getVideo(video.url);
+        const buffer = await toBuffer(data.download);
         const safe = (data.title || 'drama').replace(/[\\/:*?"<>|]/g, '_');
 
         if (sel === "2") {
@@ -272,7 +192,7 @@ cmd({
   } catch (error) {
     console.error("Drama Error:", error?.message || error);
     await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
-    reply(`❌ An error occurred: ${error?.message || 'unknown'}`);
+    reply(`❌ ${error?.message || 'unknown error'}`);
   }
 });
 
@@ -282,7 +202,7 @@ cmd({
 cmd({
   pattern: "cartoon",
   alias: ["toon", "kids"],
-  desc: "Download YouTube cartoon video.",
+  desc: "Download cartoon video.",
   category: "downloader",
   filename: __filename
 }, async (conn, m, store, { from, quoted, q, reply }) => {
@@ -298,14 +218,14 @@ cmd({
       return reply("⚠️ No results found.");
     }
 
-    const data = await fetchVideo(video.url);
+    const data = await getVideo(video.url);
 
     await conn.sendMessage(from, {
       image: { url: data.thumbnail || video.thumbnail },
       caption: `🧸 *CARTOON*\n\n🎞️ ${data.title}\n📺 ${data.author || 'Unknown'}\n\n_⬇️ Downloading..._\n\n> Powered by ERFAN-MD`
     }, { quoted: m });
 
-    const buffer = await downloadBuffer(data.downloadUrl);
+    const buffer = await toBuffer(data.download);
     const safe = (data.title || 'cartoon').replace(/[\\/:*?"<>|]/g, '_');
 
     await conn.sendMessage(from, {
@@ -320,12 +240,12 @@ cmd({
   } catch (error) {
     console.error("Cartoon Error:", error?.message || error);
     await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
-    reply(`❌ An error occurred: ${error?.message || 'unknown'}`);
+    reply(`❌ ${error?.message || 'unknown error'}`);
   }
 });
 
 // ============================================
-// COMMAND: movie (as document)
+// COMMAND: movie
 // ============================================
 cmd({
   pattern: "movie",
@@ -346,14 +266,14 @@ cmd({
       return reply("⚠️ No results found.");
     }
 
-    const data = await fetchVideo(video.url);
+    const data = await getVideo(video.url);
 
     await conn.sendMessage(from, {
       image: { url: data.thumbnail || video.thumbnail },
       caption: `🍿 *MOVIE*\n\n🎬 ${data.title}\n📺 ${data.author || 'Unknown'}\n\n_⚡ Downloading as document..._\n\n> Powered by ERFAN-MD`
     }, { quoted: m });
 
-    const buffer = await downloadBuffer(data.downloadUrl);
+    const buffer = await toBuffer(data.download);
     const safe = (data.title || 'movie').replace(/[\\/:*?"<>|]/g, '_');
 
     await conn.sendMessage(from, {
@@ -368,6 +288,6 @@ cmd({
   } catch (error) {
     console.error("Movie Error:", error?.message || error);
     await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
-    reply(`❌ An error occurred: ${error?.message || 'unknown'}`);
+    reply(`❌ ${error?.message || 'unknown error'}`);
   }
 });
