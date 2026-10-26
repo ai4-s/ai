@@ -46,14 +46,14 @@ const getAudioAPI = (url) => `${API_BASE}/ytmp3?url=${encodeURIComponent(url)}`;
 const getVideoAPI = (url) => `${API_BASE}/ytmp4?url=${encodeURIComponent(url)}`;
 
 let lastErr = 'unknown error';
-const HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
-    'Accept': '*/*'
-};
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+const HEADERS = { 'User-Agent': UA, 'Accept': '*/*' };
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+// Ask the API for a download link (single attempt)
 async function fetchDownload(apiUrl) {
     try {
-        const response = await axios.get(apiUrl, { timeout: 60000, headers: HEADERS });
+        const response = await axios.get(apiUrl, { timeout: 45000, headers: HEADERS });
         const data = response.data;
         if (data?.ok && typeof data?.download === 'string' && data.download) {
             return { url: data.download, title: data.title || null };
@@ -68,22 +68,52 @@ async function fetchDownload(apiUrl) {
     }
 }
 
-// Download media into a Buffer ourselves (more reliable than letting Baileys fetch the URL)
-async function mediaSource(url) {
-    try {
-        const res = await axios.get(url, {
-            responseType: 'arraybuffer',
-            timeout: 180000,
-            maxContentLength: Infinity,
-            maxBodyLength: Infinity,
-            headers: HEADERS
-        });
-        return Buffer.from(res.data);
-    } catch (e) {
-        lastErr = `media download error: ${e.response?.status || ''} ${e.message}`;
-        console.error('⚠️', lastErr);
-        return { url };
+// Download the file ourselves into a Buffer. Tries a few header styles because
+// these CDN hosts often block requests without a browser UA / Referer.
+async function downloadBuffer(url) {
+    let origin = '';
+    try { origin = new URL(url).origin + '/'; } catch {}
+    const strategies = [
+        { 'User-Agent': UA, 'Accept': '*/*', ...(origin ? { Referer: origin } : {}) },
+        { 'User-Agent': UA, 'Accept': '*/*' },
+        { 'User-Agent': 'WhatsApp/2.24.1 A', 'Accept': '*/*' }
+    ];
+    for (const headers of strategies) {
+        try {
+            const res = await axios.get(url, {
+                responseType: 'arraybuffer',
+                timeout: 180000,
+                maxContentLength: Infinity,
+                maxBodyLength: Infinity,
+                maxRedirects: 5,
+                headers
+            });
+            const type = String(res.headers?.['content-type'] || '');
+            if (type.includes('text/html') || type.includes('json') || !res.data || res.data.byteLength < 2000) {
+                lastErr = `media link returned non-media (${type || 'no type'}, ${res.data?.byteLength || 0} bytes)`;
+                continue;
+            }
+            return Buffer.from(res.data);
+        } catch (e) {
+            lastErr = `media download error: ${e.response?.status || ''} ${e.message}`;
+            console.error('⚠️', lastErr);
+        }
     }
+    return null;
+}
+
+// API link → download the file. If anything fails, ask the API for a FRESH link and retry
+// (links can be single-use or expire quickly; the API sometimes returns 502/5xx).
+async function getMedia(apiUrl, attempts = 3) {
+    for (let i = 1; i <= attempts; i++) {
+        const r = await fetchDownload(apiUrl);
+        if (r) {
+            const buffer = await downloadBuffer(r.url);
+            if (buffer) return { buffer, url: r.url, title: r.title };
+        }
+        if (i < attempts) await sleep(2000 * i);
+    }
+    return null;
 }
 
 async function downloadToTemp(downloadURL, prefix) {
@@ -146,12 +176,12 @@ cmd({
         }, { quoted: mek });
 
         let success = false;
-        const result = await fetchDownload(getAudioAPI(url));
+        const result = await getMedia(getAudioAPI(url));
 
         if (result) {
             try {
                 await conn.sendMessage(from, {
-                    audio: await mediaSource(result.url),
+                    audio: result.buffer,
                     mimetype: "audio/mpeg",
                     fileName: `${vid.title}.mp3`,
                     ptt: false
@@ -215,12 +245,12 @@ cmd({
         }, { quoted: mek });
 
         let success = false;
-        const result = await fetchDownload(getVideoAPI(url));
+        const result = await getMedia(getVideoAPI(url));
 
         if (result) {
             try {
                 await conn.sendMessage(from, {
-                    video: await mediaSource(result.url),
+                    video: result.buffer,
                     caption: `🎬 *${vid.title}*\n\n> Powered by ERFAN-MD`
                 }, { quoted: mek });
                 success = true;
@@ -315,20 +345,20 @@ cmd({
 
                     if (type === "mp3") {
                         let success = false;
-                        const result = await fetchDownload(getAudioAPI(vid.url));
+                        const result = await getMedia(getAudioAPI(vid.url));
 
                         if (result) {
                             try {
                                 if (asDocument) {
                                     await conn.sendMessage(from, {
-                                        document: await mediaSource(result.url),
+                                        document: result.buffer,
                                         mimetype: "audio/mpeg",
                                         fileName: `${vid.title}.mp3`,
                                         caption: `📄 *${vid.title}*\n🎧 Audio Document\n\n> Powered by ERFAN-MD`
                                     }, { quoted: received });
                                 } else {
                                     await conn.sendMessage(from, {
-                                        audio: await mediaSource(result.url),
+                                        audio: result.buffer,
                                         mimetype: "audio/mpeg",
                                         fileName: `${vid.title}.mp3`,
                                         ptt: false
@@ -348,20 +378,20 @@ cmd({
 
                     } else {
                         let success = false;
-                        const result = await fetchDownload(getVideoAPI(vid.url));
+                        const result = await getMedia(getVideoAPI(vid.url));
 
                         if (result) {
                             try {
                                 if (asDocument) {
                                     await conn.sendMessage(from, {
-                                        document: await mediaSource(result.url),
+                                        document: result.buffer,
                                         mimetype: "video/mp4",
                                         fileName: `${vid.title}.mp4`,
                                         caption: `📄 *${vid.title}*\n📹 Video Document\n\n> Powered by ERFAN-MD`
                                     }, { quoted: received });
                                 } else {
                                     await conn.sendMessage(from, {
-                                        video: await mediaSource(result.url),
+                                        video: result.buffer,
                                         caption: `🎬 *${vid.title}*\n\n> Powered by ERFAN-MD`
                                     }, { quoted: received });
                                 }
@@ -469,20 +499,20 @@ cmd({
                     const asDocument = cleanSelect === "2";
 
                     let success = false;
-                    const result = await fetchDownload(getVideoAPI(vid.url));
+                    const result = await getMedia(getVideoAPI(vid.url));
 
                     if (result) {
                         try {
                             if (asDocument) {
                                 await conn.sendMessage(from, {
-                                    document: await mediaSource(result.url),
+                                    document: result.buffer,
                                     mimetype: "video/mp4",
                                     fileName: `${vid.title}.mp4`,
                                     caption: `📄 *${vid.title}*\n📹 Video Document\n\n> Powered by ERFAN-MD`
                                 }, { quoted: received });
                             } else {
                                 await conn.sendMessage(from, {
-                                    video: await mediaSource(result.url),
+                                    video: result.buffer,
                                     caption: `🎬 *${vid.title}*\n\n> Powered by ERFAN-MD`
                                 }, { quoted: received });
                             }
@@ -560,12 +590,12 @@ cmd({
         }, { quoted: mek });
 
         let success = false;
-        const result = await fetchDownload(getVideoAPI(url));
+        const result = await getMedia(getVideoAPI(url));
 
         if (result) {
             try {
                 await conn.sendMessage(from, {
-                    video: await mediaSource(result.url),
+                    video: result.buffer,
                     caption: `🧸 *${vid.title}*\n\n> Powered by ERFAN-MD`
                 }, { quoted: mek });
                 success = true;
