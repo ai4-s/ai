@@ -128,33 +128,43 @@ async function searchVideo(q) {
   }
 
   const t0 = Date.now();
+
+  // yt-search wrapped with a hard timeout so it can never hang the command
+  const ytsSearch = async () => {
+    const search = await Promise.race([
+      yts(q),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('yt-search timed out')), 12000))
+    ]);
+    const r = search.videos?.[0];
+    if (!r) throw new Error('no result');
+    console.log(`[SEARCH] yt-search answered in ${Date.now() - t0}ms`);
+    return {
+      videoId: r.videoId,
+      title: r.title,
+      author: r.author?.name || null,
+      timestamp: r.timestamp || null,
+      views: r.views ? r.views.toLocaleString('en-US') : null,
+      thumbnail: r.thumbnail
+    };
+  };
+
+  const scrapeSearch = async () => {
+    const v = await fastSearch(q);
+    if (!v) throw new Error('no result');
+    console.log(`[SEARCH] fast scrape answered in ${Date.now() - t0}ms`);
+    return v;
+  };
+
+  // Run both at the same time and use whichever finishes first,
+  // so the slower one can never hold the command up
   let video = null;
-
   try {
-    video = await fastSearch(q);
-    if (video) console.log(`[SEARCH] fast search ${Date.now() - t0}ms`);
+    video = await Promise.any([scrapeSearch(), ytsSearch()]);
   } catch (err) {
-    console.error('[SEARCH] fast search failed:', err?.message);
-  }
-
-  // Fallback to yt-search if the fast path found nothing
-  if (!video) {
-    try {
-      const search = await yts(q);
-      const r = search.videos?.[0];
-      if (r) {
-        video = {
-          videoId: r.videoId,
-          title: r.title,
-          author: r.author?.name || null,
-          timestamp: r.timestamp || null,
-          views: r.views ? r.views.toLocaleString('en-US') : null,
-          thumbnail: r.thumbnail
-        };
-        console.log(`[SEARCH] yt-search fallback ${Date.now() - t0}ms`);
-      }
-    } catch (err) {
-      throw stageError('YouTube search', err);
+    const errors = err?.errors || [err];
+    errors.forEach((e) => console.error('[SEARCH] failed:', e?.message));
+    if (!errors.every((e) => e?.message === 'no result')) {
+      throw stageError('YouTube search', errors.find((e) => e?.message !== 'no result') || err);
     }
   }
 
@@ -174,7 +184,9 @@ async function callApi(endpoint, videoId) {
   let lastErr;
   for (let i = 1; i <= 3; i++) {
     try {
+      const tA = Date.now();
       const res = await axios.get(apiUrl, { timeout: 45000 });
+      console.log(`[${endpoint}] API responded in ${Date.now() - tA}ms`);
       const data = res.data;
       if (data && data.ok && data.download) return data;
       lastErr = new Error('API returned no download link');
@@ -192,6 +204,7 @@ async function downloadBuffer(url, { timeout, maxBytes, minBytes }) {
   let lastErr;
   for (let i = 0; i < 3; i++) {
     try {
+      const tD = Date.now();
       const res = await axios.get(url, {
         responseType: 'arraybuffer',
         timeout,
@@ -200,6 +213,7 @@ async function downloadBuffer(url, { timeout, maxBytes, minBytes }) {
         headers: HEADER_SETS[i % HEADER_SETS.length]
       });
       const buf = Buffer.from(res.data);
+      console.log(`[DOWNLOAD] ${(buf.length / 1048576).toFixed(1)}MB in ${Date.now() - tD}ms`);
       if (buf.length >= minBytes) return buf;
       lastErr = new Error('file too small / empty');
     } catch (err) {
