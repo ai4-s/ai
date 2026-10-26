@@ -7,11 +7,9 @@ const __filename = fileURLToPath(import.meta.url);
 
 // ── Single audio API (MP3) ────────────────────────────────────
 const AUDIO_API = "https://rimi-xi.vercel.app/api/ytmp3";
-
-// ── Max file size WhatsApp will accept (~60 MB safe) ──────────
 const MAX_FILE_SIZE = 60 * 1024 * 1024;
 
-// ── Extract YouTube video ID from any URL ────────────────────
+// ── Extract YouTube video ID ─────────────────────────────────
 function getVideoId(url) {
     if (!url || typeof url !== 'string') return null;
     const patterns = [
@@ -31,13 +29,49 @@ function getVideoId(url) {
     return null;
 }
 
-// ── Sanitize filename (remove illegal chars) ─────────────────
 function safeFileName(title) {
     return (title || 'audio')
         .replace(/[\\/:*?"<>|]/g, '')
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 120) || 'audio';
+}
+
+// ── ROBUST download function (fetch first, axios fallback) ──
+async function downloadBuffer(url) {
+    const headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'audio/mpeg,audio/*;q=0.9,*/*;q=0.8'
+    };
+
+    // Attempt 1: Native fetch (Node 18+)
+    try {
+        console.log('⬇️ Attempt 1: fetch...');
+        const res = await fetch(url, { method: 'GET', headers });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const arrayBuffer = await res.arrayBuffer();
+        const buf = Buffer.from(arrayBuffer);
+        if (buf.length > 10000) return buf;
+        throw new Error(`Buffer too small (${buf.length} bytes)`);
+    } catch (e) {
+        console.warn('⚠️ Fetch failed:', e.message);
+    }
+
+    // Attempt 2: axios
+    try {
+        console.log('⬇️ Attempt 2: axios...');
+        const res = await axios.get(url, {
+            responseType: 'arraybuffer',
+            timeout: 60000,
+            headers
+        });
+        const buf = Buffer.from(res.data);
+        if (buf.length > 10000) return buf;
+        throw new Error(`Buffer too small (${buf.length} bytes)`);
+    } catch (e) {
+        console.error('❌ Axios failed:', e.message);
+        throw new Error('All download methods failed');
+    }
 }
 
 // ── COMMAND: play ────────────────────────────────────────────
@@ -50,7 +84,6 @@ cmd({
     filename: __filename
 }, async (conn, mek, m, { from, text, reply }) => {
     try {
-        // ── 1. Validate input ─────────────────────────────────
         if (!text || !text.trim()) {
             return reply(
                 "❌ *Please provide a song name or a YouTube URL.*\n\n" +
@@ -61,28 +94,20 @@ cmd({
         }
 
         const { default: yts } = await import('yt-search');
-
         let vid = null;
         let url = text.trim();
 
-        // ── 2. Resolve video (search or direct URL) ───────────
         if (/^https?:\/\//i.test(url)) {
             if (!/youtube\.com|youtu\.be/i.test(url)) {
                 return reply("❌ *Please provide a valid YouTube URL.*");
             }
             const videoId = getVideoId(url);
-            if (!videoId) {
-                return reply("❌ *Invalid YouTube URL. Please check the link and try again.*");
-            }
+            if (!videoId) return reply("❌ *Invalid YouTube URL.*");
             vid = await yts({ videoId });
-            if (!vid || !vid.title) {
-                return reply("❌ *Could not fetch video details. Please try again.*");
-            }
-            url = vid.url;
         } else {
             const search = await yts(url);
             if (!search?.videos?.length) {
-                return reply("❌ *No results found for your search. Try different keywords.*");
+                return reply("❌ *No results found.*");
             }
             vid = search.videos[0];
             url = vid.url;
@@ -90,7 +115,7 @@ cmd({
 
         if (!vid) return reply("❌ *No results found.*");
 
-        // ── 3. Send info card ─────────────────────────────────
+        // Info card
         await conn.sendMessage(from, {
             image: { url: vid.thumbnail },
             caption:
@@ -106,120 +131,76 @@ cmd({
                 `> Powered by ERFAN-MD`
         }, { quoted: mek }).catch(() => {});
 
-        // ── 4. Call the API ───────────────────────────────────
+        // Call API
         const apiUrl = `${AUDIO_API}?url=${encodeURIComponent(url)}`;
         let data;
-
         try {
-            const res = await axios.get(apiUrl, {
-                timeout: 40000,
-                headers: { 'User-Agent': 'Mozilla/5.0' }
-            });
+            const res = await axios.get(apiUrl, { timeout: 40000 });
             data = res.data;
         } catch (e) {
-            console.error("❌ API request failed:", e.message);
             await conn.sendMessage(from, { react: { text: '❌', key: m.key } }).catch(() => {});
-            return reply(
-                "❌ *Download API is not responding right now.*\n" +
-                "🔁 *Please try again in a moment.*"
-            );
+            return reply("❌ *API not responding. Please try again later.*");
         }
 
-        // ── 5. Parse response ─────────────────────────────────
         const audioUrl =
             data?.ok && typeof data.download === 'string' ? data.download :
-            typeof data?.download === 'string' ? data.download :
-            null;
+            typeof data?.download === 'string' ? data.download : null;
 
         if (!audioUrl || !audioUrl.startsWith('http')) {
-            console.error("❌ Bad API response:", JSON.stringify(data).slice(0, 300));
             await conn.sendMessage(from, { react: { text: '❌', key: m.key } }).catch(() => {});
-            return reply("❌ *API returned an invalid download link. Please try again.*");
+            return reply("❌ *API returned invalid download link.*");
         }
 
-        console.log(`⬇️ Fetching audio buffer from: ${audioUrl.slice(0, 100)}...`);
-
-        // ── 6. Download the audio as a buffer ─────────────────
-        let audioBuffer = null;
-
+        // Download buffer
+        let audioBuffer;
         try {
-            const audioRes = await axios.get(audioUrl, {
-                responseType: 'arraybuffer',
-                timeout: 90000,
-                maxRedirects: 10,
-                validateStatus: (status) => status >= 200 && status < 300,
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'audio/mpeg,audio/*;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Referer': 'https://www.youtube.com/',
-                    'Range': 'bytes=0-'
-                }
-            });
-
-            audioBuffer = Buffer.from(audioRes.data);
-
-            if (!audioBuffer || audioBuffer.length < 10000) {
-                throw new Error(`Buffer too small (${audioBuffer?.length || 0} bytes)`);
-            }
-
-            if (audioBuffer.length > MAX_FILE_SIZE) {
-                console.error(`❌ File too large: ${audioBuffer.length} bytes`);
-                await conn.sendMessage(from, { react: { text: '❌', key: m.key } }).catch(() => {});
-                return reply(
-                    "❌ *File is too large for WhatsApp (over 60 MB).*\n" +
-                    "🔁 *Please try a shorter song.*"
-                );
-            }
-
-            console.log(`✅ Audio buffer ready: ${(audioBuffer.length / 1024 / 1024).toFixed(2)} MB`);
-
-        } catch (dlErr) {
-            console.error('❌ Audio download failed:', dlErr.message);
+            audioBuffer = await downloadBuffer(audioUrl);
+        } catch (e) {
             await conn.sendMessage(from, { react: { text: '❌', key: m.key } }).catch(() => {});
             return reply(
-                "❌ *Could not download the audio file.*\n" +
+                "❌ *Could not download audio.*\n" +
                 "🔁 *The link may have expired. Please try again.*"
             );
         }
 
+        if (audioBuffer.length > MAX_FILE_SIZE) {
+            await conn.sendMessage(from, { react: { text: '❌', key: m.key } }).catch(() => {});
+            return reply("❌ *File too large for WhatsApp (over 60 MB).*");
+        }
+
         const fileName = `${safeFileName(vid.title)}.mp3`;
 
-        // ── 7. Send the buffer as audio ───────────────────────
+        // Send as audio
         let sent = false;
-
         try {
             await conn.sendMessage(from, {
                 audio: audioBuffer,
                 mimetype: 'audio/mpeg',
-                fileName: fileName,
+                fileName,
                 ptt: false
             }, { quoted: mek });
             sent = true;
-            console.log('✅ Audio sent successfully (as audio)');
-        } catch (audioErr) {
-            console.error('⚠️ Buffer audio send failed:', audioErr.message);
+        } catch (e) {
+            console.error('Audio send failed:', e.message);
         }
 
-        // ── 8. Fallback: send as document ─────────────────────
+        // Fallback: document
         if (!sent) {
             try {
                 await conn.sendMessage(from, {
                     document: audioBuffer,
                     mimetype: 'audio/mpeg',
-                    fileName: fileName
+                    fileName
                 }, { quoted: mek });
                 sent = true;
-                console.log('✅ Audio sent successfully (as document)');
-            } catch (docErr) {
-                console.error('⚠️ Document send failed:', docErr.message);
+            } catch (e) {
+                console.error('Document send failed:', e.message);
             }
         }
 
-        // ── 9. Final react ────────────────────────────────────
         if (!sent) {
             await conn.sendMessage(from, { react: { text: '❌', key: m.key } }).catch(() => {});
-            return reply("❌ *Failed to send the file after downloading. Please try again.*");
+            return reply("❌ *Failed to send file after download.*");
         }
 
         await conn.sendMessage(from, { react: { text: '✅', key: m.key } }).catch(() => {});
@@ -227,6 +208,6 @@ cmd({
     } catch (err) {
         console.error("❌ PLAY ERROR:", err);
         await conn.sendMessage(from, { react: { text: '❌', key: m.key } }).catch(() => {});
-        return reply("❌ *An unexpected error occurred. Please try again later.*");
+        return reply("❌ *Unexpected error. Please try again.*");
     }
 });
