@@ -8,8 +8,14 @@ import yts from 'yt-search';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Referer': 'https://www.youtube.com/',
+  'Accept': '*/*'
+};
+
 cmd({
-  pattern: "pla",
+  pattern: "play",
   desc: "Search YouTube and download MP3 via ERFAN API.",
   category: "downloader",
   filename: __filename
@@ -31,7 +37,7 @@ cmd({
     const videoUrl = video.url;
     console.log("[PLAY] Found video:", video.title, "|", videoUrl);
 
-    // 2) Call new ytmp3 API
+    // 2) Call ytmp3 API
     const apiUrl = `https://rimi-xi.vercel.app/api/ytmp3?url=${encodeURIComponent(videoUrl)}`;
     const apiRes = await axios.get(apiUrl, { timeout: 30000 });
     const data = apiRes.data;
@@ -68,11 +74,7 @@ cmd({
       responseType: 'arraybuffer',
       timeout: 60000,
       maxContentLength: 100 * 1024 * 1024,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': 'https://www.youtube.com/',
-        'Accept': '*/*'
-      }
+      headers: BROWSER_HEADERS
     });
 
     const audioBuffer = Buffer.from(audioRes.data);
@@ -106,7 +108,7 @@ cmd({
 
 cmd({
   pattern: "video",
-  desc: "Search YouTube and download MP4 via Delirius API.",
+  desc: "Search YouTube and download MP4 via ERFAN API.",
   category: "downloader",
   filename: __filename
 }, async (conn, m, store, { from, quoted, q, reply }) => {
@@ -127,46 +129,48 @@ cmd({
     const videoUrl = video.url;
     console.log("[VIDEO] Found video:", video.title, "|", videoUrl);
 
-    // 2) Call Delirius ytmp4 API
-    const apiUrl = `https://api.delirius.online/download/ytmp4?url=${encodeURIComponent(videoUrl)}&format=360p`;
+    // 2) Call ytmp4 API
+    const apiUrl = `https://rimi-xi.vercel.app/api/ytmp4?url=${encodeURIComponent(videoUrl)}`;
     const apiRes = await axios.get(apiUrl, { timeout: 30000 });
     const data = apiRes.data;
 
-    if (!data || !data.status || !data.data || !data.data.download) {
+    if (!data || !data.ok || !data.download) {
       await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
       return reply("⚠️ Failed to get download link from API.");
     }
 
-    const vid = data.data;
+    // API returns generic author and null duration, so use yt-search values
+    const title = data.title || video.title || 'video';
+    const thumbnail = data.thumbnail || video.thumbnail;
+    const quality = data.quality || 'HD';
+    const author = video.author?.name || data.author || 'Unknown';
+    const durationStr = video.timestamp || 'N/A';
+    const views = video.views ? video.views.toLocaleString('en-US') : 'N/A';
 
     // 3) Build caption
     const caption = `╭─────────────🎬
 │ 🎥 *VIDEO DOWNLOADER*
 │─────────────────────
-│ 🎬 *Title:* ${vid.title}
-│ 👤 *Author:* ${vid.author}
-│ 👀 *Views:* ${vid.views}
-│ 👍 *Likes:* ${vid.likes}
-│ 🎞️ *Format:* ${vid.format}
+│ 🎬 *Title:* ${title}
+│ 👤 *Author:* ${author}
+│ ⏱️ *Duration:* ${durationStr}
+│ 👀 *Views:* ${views}
+│ 🎞️ *Quality:* ${quality}
 ╰─────────────🎬
 🔗 *Powered By ERFAN-MD*`;
 
     // 4) Send thumbnail + caption
     await conn.sendMessage(from, {
-      image: { url: vid.image },
+      image: { url: thumbnail },
       caption: caption
     }, { quoted: m });
 
     // 5) Download MP4 to buffer
-    const videoRes = await axios.get(vid.download, {
+    const videoRes = await axios.get(data.download, {
       responseType: 'arraybuffer',
       timeout: 120000,
       maxContentLength: 500 * 1024 * 1024,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': 'https://www.youtube.com/',
-        'Accept': '*/*'
-      }
+      headers: BROWSER_HEADERS
     });
 
     const videoBuffer = Buffer.from(videoRes.data);
@@ -176,14 +180,14 @@ cmd({
       return reply("❌ Downloaded file is empty. Please try another video.");
     }
 
-    const safeTitle = (vid.title || 'video').replace(/[\\/:*?"<>|]/g, '_');
+    const safeTitle = title.replace(/[\\/:*?"<>|]/g, '_');
 
     // 6) Send video
     await conn.sendMessage(from, {
       video: videoBuffer,
       mimetype: 'video/mp4',
       fileName: `${safeTitle}.mp4`,
-      caption: `🎬 *${vid.title}*\n🎞️ ${vid.format}\n🔗 *Powered By ERFAN-MD*`
+      caption: `🎬 *${title}*\n🎞️ ${quality}\n🔗 *Powered By ERFAN-MD*`
     }, { quoted: m });
 
     await conn.sendMessage(from, { react: { text: "✅", key: m.key } });
