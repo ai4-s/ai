@@ -45,17 +45,44 @@ function getVideoId(url) {
 const getAudioAPI = (url) => `${API_BASE}/ytmp3?url=${encodeURIComponent(url)}`;
 const getVideoAPI = (url) => `${API_BASE}/ytmp4?url=${encodeURIComponent(url)}`;
 
+let lastErr = 'unknown error';
+const HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+    'Accept': '*/*'
+};
+
 async function fetchDownload(apiUrl) {
     try {
-        const response = await axios.get(apiUrl, { timeout: 30000 });
+        const response = await axios.get(apiUrl, { timeout: 60000, headers: HEADERS });
         const data = response.data;
         if (data?.ok && typeof data?.download === 'string' && data.download) {
             return { url: data.download, title: data.title || null };
         }
+        lastErr = `API returned no download link: ${JSON.stringify(data).slice(0, 150)}`;
+        console.error('⚠️', lastErr);
         return null;
     } catch (e) {
-        console.error(`⚠️ API failed (${apiUrl}):`, e.message);
+        lastErr = `API error: ${e.response?.status || ''} ${e.message}`;
+        console.error(`⚠️ API failed (${apiUrl}):`, lastErr);
         return null;
+    }
+}
+
+// Download media into a Buffer ourselves (more reliable than letting Baileys fetch the URL)
+async function mediaSource(url) {
+    try {
+        const res = await axios.get(url, {
+            responseType: 'arraybuffer',
+            timeout: 180000,
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity,
+            headers: HEADERS
+        });
+        return Buffer.from(res.data);
+    } catch (e) {
+        lastErr = `media download error: ${e.response?.status || ''} ${e.message}`;
+        console.error('⚠️', lastErr);
+        return { url };
     }
 }
 
@@ -64,6 +91,7 @@ async function downloadToTemp(downloadURL, prefix) {
     const fileRes = await axios({
         method: 'GET',
         url: downloadURL,
+        headers: HEADERS,
         responseType: 'stream'
     });
     const writer = fs.createWriteStream(tempFile);
@@ -123,18 +151,18 @@ cmd({
         if (result) {
             try {
                 await conn.sendMessage(from, {
-                    audio: { url: result.url },
+                    audio: await mediaSource(result.url),
                     mimetype: "audio/mpeg",
                     fileName: `${vid.title}.mp3`,
                     ptt: false
                 }, { quoted: mek });
                 success = true;
             } catch (sendErr) {
-                console.error("⚠️ Audio send failed:", sendErr.message);
+                console.error("⚠️ Audio send failed:", sendErr.message); lastErr = "send error: " + sendErr.message;
             }
         }
 
-        if (!success) return reply("❌ Download failed! Try again later.");
+        if (!success) return reply(`❌ Download failed! Try again later.\n_Reason: ${lastErr}_`);
         await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
 
     } catch (err) {
@@ -192,16 +220,16 @@ cmd({
         if (result) {
             try {
                 await conn.sendMessage(from, {
-                    video: { url: result.url },
+                    video: await mediaSource(result.url),
                     caption: `🎬 *${vid.title}*\n\n> Powered by ERFAN-MD`
                 }, { quoted: mek });
                 success = true;
             } catch (sendErr) {
-                console.error("⚠️ Video send failed:", sendErr.message);
+                console.error("⚠️ Video send failed:", sendErr.message); lastErr = "send error: " + sendErr.message;
             }
         }
 
-        if (!success) return reply("❌ Download failed! Try again later.");
+        if (!success) return reply(`❌ Download failed! Try again later.\n_Reason: ${lastErr}_`);
         await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
 
     } catch (e) {
@@ -293,14 +321,14 @@ cmd({
                             try {
                                 if (asDocument) {
                                     await conn.sendMessage(from, {
-                                        document: { url: result.url },
+                                        document: await mediaSource(result.url),
                                         mimetype: "audio/mpeg",
                                         fileName: `${vid.title}.mp3`,
                                         caption: `📄 *${vid.title}*\n🎧 Audio Document\n\n> Powered by ERFAN-MD`
                                     }, { quoted: received });
                                 } else {
                                     await conn.sendMessage(from, {
-                                        audio: { url: result.url },
+                                        audio: await mediaSource(result.url),
                                         mimetype: "audio/mpeg",
                                         fileName: `${vid.title}.mp3`,
                                         ptt: false
@@ -308,13 +336,13 @@ cmd({
                                 }
                                 success = true;
                             } catch (sendErr) {
-                                console.error("⚠️ Audio send failed:", sendErr.message);
+                                console.error("⚠️ Audio send failed:", sendErr.message); lastErr = "send error: " + sendErr.message;
                             }
                         }
 
                         if (!success) {
                             return await conn.sendMessage(from, { 
-                                text: "❌ Audio download failed! Try again later." 
+                                text: `❌ Audio download failed! Try again later.\n_Reason: ${lastErr}_` 
                             }, { quoted: received });
                         }
 
@@ -326,26 +354,26 @@ cmd({
                             try {
                                 if (asDocument) {
                                     await conn.sendMessage(from, {
-                                        document: { url: result.url },
+                                        document: await mediaSource(result.url),
                                         mimetype: "video/mp4",
                                         fileName: `${vid.title}.mp4`,
                                         caption: `📄 *${vid.title}*\n📹 Video Document\n\n> Powered by ERFAN-MD`
                                     }, { quoted: received });
                                 } else {
                                     await conn.sendMessage(from, {
-                                        video: { url: result.url },
+                                        video: await mediaSource(result.url),
                                         caption: `🎬 *${vid.title}*\n\n> Powered by ERFAN-MD`
                                     }, { quoted: received });
                                 }
                                 success = true;
                             } catch (sendErr) {
-                                console.error("⚠️ Video send failed:", sendErr.message);
+                                console.error("⚠️ Video send failed:", sendErr.message); lastErr = "send error: " + sendErr.message;
                             }
                         }
 
                         if (!success) {
                             return await conn.sendMessage(from, { 
-                                text: "❌ Video download failed! Try again later." 
+                                text: `❌ Video download failed! Try again later.\n_Reason: ${lastErr}_` 
                             }, { quoted: received });
                         }
                     }
@@ -447,26 +475,26 @@ cmd({
                         try {
                             if (asDocument) {
                                 await conn.sendMessage(from, {
-                                    document: { url: result.url },
+                                    document: await mediaSource(result.url),
                                     mimetype: "video/mp4",
                                     fileName: `${vid.title}.mp4`,
                                     caption: `📄 *${vid.title}*\n📹 Video Document\n\n> Powered by ERFAN-MD`
                                 }, { quoted: received });
                             } else {
                                 await conn.sendMessage(from, {
-                                    video: { url: result.url },
+                                    video: await mediaSource(result.url),
                                     caption: `🎬 *${vid.title}*\n\n> Powered by ERFAN-MD`
                                 }, { quoted: received });
                             }
                             success = true;
                         } catch (sendErr) {
-                            console.error("⚠️ Video send failed:", sendErr.message);
+                            console.error("⚠️ Video send failed:", sendErr.message); lastErr = "send error: " + sendErr.message;
                         }
                     }
 
                     if (!success) {
                         return await conn.sendMessage(from, { 
-                            text: "❌ Video download failed! Try again later." 
+                            text: `❌ Video download failed! Try again later.\n_Reason: ${lastErr}_` 
                         }, { quoted: received });
                     }
 
@@ -537,16 +565,16 @@ cmd({
         if (result) {
             try {
                 await conn.sendMessage(from, {
-                    video: { url: result.url },
+                    video: await mediaSource(result.url),
                     caption: `🧸 *${vid.title}*\n\n> Powered by ERFAN-MD`
                 }, { quoted: mek });
                 success = true;
             } catch (sendErr) {
-                console.error("⚠️ Send failed:", sendErr.message);
+                console.error("⚠️ Send failed:", sendErr.message); lastErr = "send error: " + sendErr.message;
             }
         }
 
-        if (!success) return reply("❌ Download failed! Try again later.");
+        if (!success) return reply(`❌ Download failed! Try again later.\n_Reason: ${lastErr}_`);
         await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
 
     } catch (e) {
@@ -606,7 +634,7 @@ _⚡ Downloading as document..._
         const result = await fetchDownload(getVideoAPI(vid.url));
 
         if (!result) {
-            return reply("❌ Failed to get movie! Try again later.");
+            return reply(`❌ Failed to get movie! Try again later.\n_Reason: ${lastErr}_`);
         }
 
         const title = result.title || vid.title;
