@@ -9,7 +9,7 @@ import path from 'node:path';
 const __filename = fileURLToPath(import.meta.url);
 
 // ============================================
-// NEW VIDEO API (MP4) — replaces all old ones
+// NEW VIDEO API (MP4) — matches your working example
 // ============================================
 const VIDEO_API = (url) => `https://rimi-xi.vercel.app/api/ytmp4?url=${encodeURIComponent(url)}`;
 
@@ -43,54 +43,81 @@ function getVideoId(url) {
 }
 
 // ============================================
-// Fetch video data from the new API
+// Fetch video data — with retry + clean URL + logging
 // ============================================
 async function fetchVideoData(url) {
-    const res = await axios.get(VIDEO_API(url), { timeout: 30000 });
-    if (res.data?.ok && res.data?.download) {
-        return {
-            downloadUrl: res.data.download,
-            title: res.data.title,
-            thumbnail: res.data.thumbnail,
-            author: res.data.author,
-            quality: res.data.quality
-        };
+    const vidId = getVideoId(url);
+    if (!vidId) throw new Error(`Invalid YouTube URL: ${url}`);
+
+    // Use youtu.be format exactly like the working example
+    const cleanUrl = `https://youtu.be/${vidId}`;
+    console.log(`[ERFAN-API] ▶ Requesting: ${cleanUrl}`);
+
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+            const res = await axios.get(VIDEO_API(cleanUrl), {
+                timeout: 60000,
+                validateStatus: () => true,
+                headers: { 'User-Agent': 'Mozilla/5.0' }
+            });
+
+            console.log(`[ERFAN-API] ✓ HTTP ${res.status} (attempt ${attempt})`);
+            console.log(`[ERFAN-API] Response:`, JSON.stringify(res.data).slice(0, 300));
+
+            if (res.data?.ok && res.data?.download) {
+                return {
+                    downloadUrl: res.data.download,
+                    title: res.data.title,
+                    thumbnail: res.data.thumbnail,
+                    author: res.data.author,
+                    quality: res.data.quality
+                };
+            }
+
+            lastError = new Error(`API ok=false or missing download (HTTP ${res.status})`);
+        } catch (e) {
+            lastError = e;
+            console.error(`[ERFAN-API] ✗ Attempt ${attempt} failed:`, e.message);
+            if (attempt < 2) await new Promise(r => setTimeout(r, 1500));
+        }
     }
-    return null;
+    throw lastError || new Error("API request failed");
 }
 
 // ============================================
-// Send video: try direct URL first, fallback to disk
+// Send video: try URL first, fallback to disk
 // ============================================
-async function sendVideo(conn, from, quoted, data, { caption, asDocument = false, forceDownload = false } = {}) {
+async function sendVideo(conn, from, quoted, data, { caption, asDocument = false } = {}) {
     const finalCaption = caption || `🎬 *${data.title}*\n\n> Powered by ERFAN-MD`;
 
-    // Try sending the URL directly (unless forced to download)
-    if (!forceDownload) {
-        try {
-            const payload = asDocument
-                ? {
-                    document: { url: data.downloadUrl },
-                    mimetype: "video/mp4",
-                    fileName: `${data.title}.mp4`,
-                    caption: finalCaption
-                }
-                : {
-                    video: { url: data.downloadUrl },
-                    caption: finalCaption
-                };
-            await conn.sendMessage(from, payload, { quoted });
-            return true;
-        } catch (e) {
-            console.error('⚠️ Direct URL send failed:', e.message);
-        }
+    // --- Attempt 1: direct URL ---
+    try {
+        const payload = asDocument
+            ? { document: { url: data.downloadUrl }, mimetype: "video/mp4", fileName: `${data.title}.mp4`, caption: finalCaption }
+            : { video: { url: data.downloadUrl }, caption: finalCaption };
+        await conn.sendMessage(from, payload, { quoted });
+        console.log('[ERFAN-SEND] ✓ Direct URL send OK');
+        return true;
+    } catch (e) {
+        console.error('[ERFAN-SEND] ✗ Direct URL send failed:', e.message);
     }
 
-    // Disk fallback
+    // --- Attempt 2: download to disk ---
     let tempFile = null;
     try {
         tempFile = path.join(os.tmpdir(), `video_${Date.now()}.mp4`);
-        const fileRes = await axios({ method: 'GET', url: data.downloadUrl, responseType: 'stream' });
+        console.log('[ERFAN-SEND] ⬇ Downloading to disk...');
+
+        const fileRes = await axios({
+            method: 'GET',
+            url: data.downloadUrl,
+            responseType: 'stream',
+            timeout: 120000,
+            maxRedirects: 5
+        });
+
         const writer = fs.createWriteStream(tempFile);
         fileRes.data.pipe(writer);
         await new Promise((resolve, reject) => {
@@ -98,21 +125,16 @@ async function sendVideo(conn, from, quoted, data, { caption, asDocument = false
             writer.on('error', reject);
         });
 
+        const stats = fs.statSync(tempFile);
+        console.log(`[ERFAN-SEND] ✓ File ready: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+
         const payload = asDocument
-            ? {
-                document: { url: tempFile },
-                mimetype: "video/mp4",
-                fileName: `${data.title}.mp4`,
-                caption: finalCaption
-            }
-            : {
-                video: { url: tempFile },
-                caption: finalCaption
-            };
+            ? { document: { url: tempFile }, mimetype: "video/mp4", fileName: `${data.title}.mp4`, caption: finalCaption }
+            : { video: { url: tempFile }, caption: finalCaption };
         await conn.sendMessage(from, payload, { quoted });
         return true;
     } catch (e) {
-        console.error('⚠️ Disk fallback failed:', e.message);
+        console.error('[ERFAN-SEND] ✗ Disk fallback failed:', e.message);
         return false;
     } finally {
         if (tempFile) {
@@ -165,8 +187,6 @@ cmd({
         }, { quoted: mek });
 
         const data = await fetchVideoData(url);
-        if (!data) return reply("❌ Failed to fetch video! Try again later.");
-
         const ok = await sendVideo(conn, from, mek, data, {
             caption: `🎬 *${data.title || vid.title}*\n\n> Powered by ERFAN-MD`
         });
@@ -176,13 +196,14 @@ cmd({
 
     } catch (e) {
         console.error("Error in .video command:", e);
-        reply("❌ Error occurred, please try again later!");
+        // 👇 shows the REAL error so you can see what's failing
+        reply(`❌ Error: ${e.message || 'Unknown error'}`);
         await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
     }
 });
 
 // ============================================
-// COMMAND: drama (Video Only - Interactive)
+// COMMAND: drama (Interactive)
 // ============================================
 cmd({
     pattern: "drama",
@@ -229,11 +250,7 @@ cmd({
 
 > Powered by ERFAN-MD`;
 
-        const sent = await conn.sendMessage(from, {
-            image: { url: vid.thumbnail },
-            caption
-        }, { quoted: mek });
-
+        const sent = await conn.sendMessage(from, { image: { url: vid.thumbnail }, caption }, { quoted: mek });
         const msgId = sent.key.id;
 
         const dramaListener = async (msgData) => {
@@ -251,28 +268,22 @@ cmd({
 
                 if (cleanSelect === "1" || cleanSelect === "2") {
                     const asDocument = cleanSelect === "2";
-
-                    const data = await fetchVideoData(vid.url);
-                    if (!data) {
-                        return await conn.sendMessage(from, {
-                            text: "❌ Failed to fetch video! Try again later."
-                        }, { quoted: received });
+                    try {
+                        const data = await fetchVideoData(vid.url);
+                        const ok = await sendVideo(conn, from, received, data, {
+                            asDocument,
+                            caption: asDocument
+                                ? `📄 *${data.title || vid.title}*\n📹 Video Document\n\n> Powered by ERFAN-MD`
+                                : `🎬 *${data.title || vid.title}*\n\n> Powered by ERFAN-MD`
+                        });
+                        if (!ok) {
+                            return await conn.sendMessage(from, { text: "❌ Failed to send video!" }, { quoted: received });
+                        }
+                        await conn.sendMessage(from, { react: { text: '✅', key: received.key } });
+                    } catch (e) {
+                        console.error('drama error:', e);
+                        await conn.sendMessage(from, { text: `❌ Error: ${e.message}` }, { quoted: received });
                     }
-
-                    const ok = await sendVideo(conn, from, received, data, {
-                        asDocument,
-                        caption: asDocument
-                            ? `📄 *${data.title || vid.title}*\n📹 Video Document\n\n> Powered by ERFAN-MD`
-                            : `🎬 *${data.title || vid.title}*\n\n> Powered by ERFAN-MD`
-                    });
-
-                    if (!ok) {
-                        return await conn.sendMessage(from, {
-                            text: "❌ All video sources failed! Try again later."
-                        }, { quoted: received });
-                    }
-
-                    await conn.sendMessage(from, { react: { text: '✅', key: received.key } });
                 } else {
                     await conn.sendMessage(from, {
                         text: `❌ *Invalid selection!*\nPlease reply with:\n1️⃣ for Video (MP4)\n2️⃣ for Video as Document`
@@ -334,8 +345,6 @@ cmd({
         }, { quoted: mek });
 
         const data = await fetchVideoData(url);
-        if (!data) return reply("❌ Failed to fetch cartoon! Try again later.");
-
         const ok = await sendVideo(conn, from, mek, data, {
             caption: `🧸 *${data.title || vid.title}*\n\n> Powered by ERFAN-MD`
         });
@@ -345,13 +354,13 @@ cmd({
 
     } catch (e) {
         console.error("Error in .cartoon command:", e);
-        reply("❌ Error occurred, please try again later!");
+        reply(`❌ Error: ${e.message || 'Unknown error'}`);
         await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
     }
 });
 
 // ============================================
-// COMMAND: movie (send as document)
+// COMMAND: movie (as document)
 // ============================================
 cmd({
     pattern: "movie",
@@ -362,20 +371,15 @@ cmd({
     filename: __filename
 }, async (conn, mek, m, { from, text, reply }) => {
     try {
-        if (!text) {
-            return reply("❌ *Please provide a movie name!*\n\nExample: `.movie DJ Ganesh Chaturthi`");
-        }
+        if (!text) return reply("❌ *Please provide a movie name!*\n\nExample: `.movie DJ Ganesh Chaturthi`");
 
         if (text.startsWith('http://') || text.startsWith('https://')) {
             return reply("❌ URLs are not supported here.\nPlease send a movie *name* only.");
         }
 
-        await conn.sendMessage(from, {
-            react: { text: "⚡", key: mek.key }
-        });
+        await conn.sendMessage(from, { react: { text: "⚡", key: mek.key } });
 
         const { default: yts } = await import('yt-search');
-
         const search = await yts(`${text} full movie`);
         if (!search || !search.videos || !search.videos.length) {
             return reply("❌ No results found!");
@@ -397,8 +401,6 @@ _⚡ Downloading as document..._
         }, { quoted: mek });
 
         const data = await fetchVideoData(vid.url);
-        if (!data) return reply("❌ Failed to get movie! Try again later.");
-
         const ok = await sendVideo(conn, from, mek, data, {
             asDocument: true,
             caption: `🍿 *${data.title || vid.title}*\n\n> Powered by ERFAN-MD`
@@ -408,7 +410,8 @@ _⚡ Downloading as document..._
         await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
 
     } catch (e) {
-        await reply("❌ Error: " + (e?.message || e));
+        console.error("Error in .movie command:", e);
+        await reply(`❌ Error: ${e.message || 'Unknown error'}`);
         await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
     }
 });
@@ -430,7 +433,6 @@ async (conn, mek, m, { from, text, reply }) => {
         if (!text) return reply('*Please provide search words!*\n\nExample: .yts Alan Walker Faded');
 
         const { default: yts } = await import('yt-search');
-
         const search = await yts(text);
 
         if (!search.videos || !search.videos.length) {
