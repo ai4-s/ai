@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 cmd({
-  pattern: "play",
+  pattern: "pla",
   desc: "Search YouTube and download MP3 via ERFAN API.",
   category: "downloader",
   filename: __filename
