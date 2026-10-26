@@ -1,15 +1,27 @@
-// ERFAN MD
+// ERFAN MD 
 import { fileURLToPath } from 'url';
 import { cmd } from '../command.js';
 import axios from 'axios';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const __filename = fileURLToPath(import.meta.url);
 
-// ── Single audio API (MP3) ────────────────────────────────────
-const AUDIO_API = "https://rimi-xi.vercel.app/api/ytmp3";
-const MAX_FILE_SIZE = 60 * 1024 * 1024;
+// ============================================
+// NEW VIDEO API (MP4) — replaces all old ones
+// ============================================
+const VIDEO_API = (url) => `https://rimi-xi.vercel.app/api/ytmp4?url=${encodeURIComponent(url)}`;
 
-// ── Extract YouTube video ID ─────────────────────────────────
+const toSmallCaps = (text) => {
+    const map = {
+        'a': 'ᴀ', 'b': 'ʙ', 'c': 'ᴄ', 'd': 'ᴅ', 'e': 'ᴇ', 'f': 'ғ', 'g': 'ɢ', 'h': 'ʜ', 'i': 'ɪ', 'j': 'ᴊ',
+        'k': 'ᴋ', 'l': 'ʟ', 'm': 'ᴍ', 'n': 'ɴ', 'o': 'ᴏ', 'p': 'ᴘ', 'q': 'ǫ', 'r': 'ʀ', 's': 's', 't': 'ᴛ',
+        'u': 'ᴜ', 'v': 'ᴠ', 'w': 'ᴡ', 'x': 'x', 'y': 'ʏ', 'z': 'ᴢ'
+    };
+    return text.split('').map(c => map[c.toLowerCase()] || c).join('');
+};
+
 function getVideoId(url) {
     if (!url || typeof url !== 'string') return null;
     const patterns = [
@@ -20,194 +32,435 @@ function getVideoId(url) {
         /(?:youtube\.com\/live\/)([a-zA-Z0-9_-]{11})/,
         /(?:youtube\.com\/v\/)([a-zA-Z0-9_-]{11})/,
         /(?:m\.youtube\.com\/watch\?.*v=)([a-zA-Z0-9_-]{11})/,
+        /(?:youtube\.com\/watch\/)([a-zA-Z0-9_-]{11})/,
         /(?:music\.youtube\.com\/watch\?.*v=)([a-zA-Z0-9_-]{11})/
     ];
-    for (const p of patterns) {
-        const m = url.match(p);
-        if (m && m[1]) return m[1];
+    for (const pattern of patterns) {
+        const match = url.match(pattern);
+        if (match && match[1]) return match[1];
     }
     return null;
 }
 
-function safeFileName(title) {
-    return (title || 'audio')
-        .replace(/[\\/:*?"<>|]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 120) || 'audio';
+// ============================================
+// Fetch video data from the new API
+// ============================================
+async function fetchVideoData(url) {
+    const res = await axios.get(VIDEO_API(url), { timeout: 30000 });
+    if (res.data?.ok && res.data?.download) {
+        return {
+            downloadUrl: res.data.download,
+            title: res.data.title,
+            thumbnail: res.data.thumbnail,
+            author: res.data.author,
+            quality: res.data.quality
+        };
+    }
+    return null;
 }
 
-// ── ROBUST download function (fetch first, axios fallback) ──
-async function downloadBuffer(url) {
-    const headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'audio/mpeg,audio/*;q=0.9,*/*;q=0.8'
-    };
+// ============================================
+// Send video: try direct URL first, fallback to disk
+// ============================================
+async function sendVideo(conn, from, quoted, data, { caption, asDocument = false, forceDownload = false } = {}) {
+    const finalCaption = caption || `🎬 *${data.title}*\n\n> Powered by ERFAN-MD`;
 
-    // Attempt 1: Native fetch (Node 18+)
-    try {
-        console.log('⬇️ Attempt 1: fetch...');
-        const res = await fetch(url, { method: 'GET', headers });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const arrayBuffer = await res.arrayBuffer();
-        const buf = Buffer.from(arrayBuffer);
-        if (buf.length > 10000) return buf;
-        throw new Error(`Buffer too small (${buf.length} bytes)`);
-    } catch (e) {
-        console.warn('⚠️ Fetch failed:', e.message);
+    // Try sending the URL directly (unless forced to download)
+    if (!forceDownload) {
+        try {
+            const payload = asDocument
+                ? {
+                    document: { url: data.downloadUrl },
+                    mimetype: "video/mp4",
+                    fileName: `${data.title}.mp4`,
+                    caption: finalCaption
+                }
+                : {
+                    video: { url: data.downloadUrl },
+                    caption: finalCaption
+                };
+            await conn.sendMessage(from, payload, { quoted });
+            return true;
+        } catch (e) {
+            console.error('⚠️ Direct URL send failed:', e.message);
+        }
     }
 
-    // Attempt 2: axios
+    // Disk fallback
+    let tempFile = null;
     try {
-        console.log('⬇️ Attempt 2: axios...');
-        const res = await axios.get(url, {
-            responseType: 'arraybuffer',
-            timeout: 60000,
-            headers
+        tempFile = path.join(os.tmpdir(), `video_${Date.now()}.mp4`);
+        const fileRes = await axios({ method: 'GET', url: data.downloadUrl, responseType: 'stream' });
+        const writer = fs.createWriteStream(tempFile);
+        fileRes.data.pipe(writer);
+        await new Promise((resolve, reject) => {
+            writer.on('finish', resolve);
+            writer.on('error', reject);
         });
-        const buf = Buffer.from(res.data);
-        if (buf.length > 10000) return buf;
-        throw new Error(`Buffer too small (${buf.length} bytes)`);
+
+        const payload = asDocument
+            ? {
+                document: { url: tempFile },
+                mimetype: "video/mp4",
+                fileName: `${data.title}.mp4`,
+                caption: finalCaption
+            }
+            : {
+                video: { url: tempFile },
+                caption: finalCaption
+            };
+        await conn.sendMessage(from, payload, { quoted });
+        return true;
     } catch (e) {
-        console.error('❌ Axios failed:', e.message);
-        throw new Error('All download methods failed');
+        console.error('⚠️ Disk fallback failed:', e.message);
+        return false;
+    } finally {
+        if (tempFile) {
+            try { if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile); } catch {}
+            if (global.gc) global.gc();
+        }
     }
 }
 
-// ── COMMAND: play ────────────────────────────────────────────
+// ============================================
+// COMMAND: video
+// ============================================
 cmd({
-    pattern: "play",
-    alias: ["song", "music", "audio"],
-    desc: "Download YouTube audio as MP3",
+    pattern: "video",
+    alias: ["ytv", "ytmp4", "vd"],
+    desc: "Download YouTube video",
     category: "download",
-    react: "🎧",
+    react: "📹",
     filename: __filename
 }, async (conn, mek, m, { from, text, reply }) => {
     try {
-        if (!text || !text.trim()) {
-            return reply(
-                "❌ *Please provide a song name or a YouTube URL.*\n\n" +
-                "📌 *Examples:*\n" +
-                "•  *.play Shape of You*\n" +
-                "•  *.play https://youtu.be/wSkXuqLAjow*"
-            );
-        }
+        if (!text) return reply("🎥 Please provide a video name or link!\n\nExample: `.video Alone Marshmello`");
 
         const { default: yts } = await import('yt-search');
-        let vid = null;
-        let url = text.trim();
 
-        if (/^https?:\/\//i.test(url)) {
-            if (!/youtube\.com|youtu\.be/i.test(url)) {
-                return reply("❌ *Please provide a valid YouTube URL.*");
+        let url = text;
+        let vid = null;
+
+        if (text.startsWith('http://') || text.startsWith('https://')) {
+            if (!text.includes("youtube.com") && !text.includes("youtu.be")) {
+                return reply("❌ Please provide a valid YouTube URL!");
             }
-            const videoId = getVideoId(url);
-            if (!videoId) return reply("❌ *Invalid YouTube URL.*");
-            vid = await yts({ videoId });
+            const videoId = getVideoId(text);
+            if (!videoId) return reply("❌ Invalid YouTube URL!");
+            vid = await yts({ videoId: videoId });
         } else {
-            const search = await yts(url);
-            if (!search?.videos?.length) {
-                return reply("❌ *No results found.*");
+            const search = await yts(text);
+            if (!search || !search.videos || !search.videos.length) {
+                return reply("❌ No video results found!");
             }
             vid = search.videos[0];
             url = vid.url;
         }
 
-        if (!vid) return reply("❌ *No results found.*");
+        if (!vid) return reply("❌ No results found!");
 
-        // Info card
         await conn.sendMessage(from, {
             image: { url: vid.thumbnail },
-            caption:
-                `🎧 *AUDIO DOWNLOADER (MP3)*\n` +
-                `╭━━❐━⪼\n` +
-                `┇๏ *Title*    : ${vid.title}\n` +
-                `┇๏ *Duration* : ${vid.timestamp || 'N/A'}\n` +
-                `┇๏ *Views*    : ${vid.views?.toLocaleString() || 'N/A'}\n` +
-                `┇๏ *Author*   : ${vid.author?.name || 'Unknown'}\n` +
-                `┇๏ *Quality*  : 128K MP3\n` +
-                `┇๏ *Status*   : Downloading...\n` +
-                `╰━━❑━⪼\n` +
-                `> Powered by ERFAN-MD`
-        }, { quoted: mek }).catch(() => {});
+            caption: `*🎬 VIDEO DOWNLOADER*\n\n🎞️ *Title:* ${vid.title}\n📺 *Channel:* ${vid.author?.name || 'Unknown'}\n🕒 *Duration:* ${vid.timestamp}\n\n*Status:* Downloading Video...\n\n> Powered by ERFAN-MD`
+        }, { quoted: mek });
 
-        // Call API
-        const apiUrl = `${AUDIO_API}?url=${encodeURIComponent(url)}`;
-        let data;
-        try {
-            const res = await axios.get(apiUrl, { timeout: 40000 });
-            data = res.data;
-        } catch (e) {
-            await conn.sendMessage(from, { react: { text: '❌', key: m.key } }).catch(() => {});
-            return reply("❌ *API not responding. Please try again later.*");
-        }
+        const data = await fetchVideoData(url);
+        if (!data) return reply("❌ Failed to fetch video! Try again later.");
 
-        const audioUrl =
-            data?.ok && typeof data.download === 'string' ? data.download :
-            typeof data?.download === 'string' ? data.download : null;
+        const ok = await sendVideo(conn, from, mek, data, {
+            caption: `🎬 *${data.title || vid.title}*\n\n> Powered by ERFAN-MD`
+        });
 
-        if (!audioUrl || !audioUrl.startsWith('http')) {
-            await conn.sendMessage(from, { react: { text: '❌', key: m.key } }).catch(() => {});
-            return reply("❌ *API returned invalid download link.*");
-        }
+        if (!ok) return reply("❌ Failed to send video! Try again later.");
+        await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
 
-        // Download buffer
-        let audioBuffer;
-        try {
-            audioBuffer = await downloadBuffer(audioUrl);
-        } catch (e) {
-            await conn.sendMessage(from, { react: { text: '❌', key: m.key } }).catch(() => {});
-            return reply(
-                "❌ *Could not download audio.*\n" +
-                "🔁 *The link may have expired. Please try again.*"
-            );
-        }
+    } catch (e) {
+        console.error("Error in .video command:", e);
+        reply("❌ Error occurred, please try again later!");
+        await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+    }
+});
 
-        if (audioBuffer.length > MAX_FILE_SIZE) {
-            await conn.sendMessage(from, { react: { text: '❌', key: m.key } }).catch(() => {});
-            return reply("❌ *File too large for WhatsApp (over 60 MB).*");
-        }
+// ============================================
+// COMMAND: drama (Video Only - Interactive)
+// ============================================
+cmd({
+    pattern: "drama",
+    alias: ["film", "series"],
+    desc: "Download YouTube drama/movie video (interactive)",
+    category: "download",
+    react: "🎬",
+    filename: __filename
+}, async (conn, mek, m, { from, text, reply }) => {
+    try {
+        if (!text) return reply("🎬 Please provide a drama/movie name or link.\n\nExample: `.drama Muskan 5`");
 
-        const fileName = `${safeFileName(vid.title)}.mp3`;
+        const { default: yts } = await import('yt-search');
 
-        // Send as audio
-        let sent = false;
-        try {
-            await conn.sendMessage(from, {
-                audio: audioBuffer,
-                mimetype: 'audio/mpeg',
-                fileName,
-                ptt: false
-            }, { quoted: mek });
-            sent = true;
-        } catch (e) {
-            console.error('Audio send failed:', e.message);
-        }
+        let vid = null;
 
-        // Fallback: document
-        if (!sent) {
-            try {
-                await conn.sendMessage(from, {
-                    document: audioBuffer,
-                    mimetype: 'audio/mpeg',
-                    fileName
-                }, { quoted: mek });
-                sent = true;
-            } catch (e) {
-                console.error('Document send failed:', e.message);
+        if (text.startsWith('http://') || text.startsWith('https://')) {
+            if (!text.includes("youtube.com") && !text.includes("youtu.be")) {
+                return reply("❌ Please provide a valid YouTube URL!");
             }
+            const videoId = getVideoId(text);
+            if (!videoId) return reply("❌ Invalid YouTube URL!");
+            vid = await yts({ videoId: videoId });
+        } else {
+            const search = await yts(text);
+            if (!search || !search.videos || !search.videos.length) {
+                return reply("❌ No results found!");
+            }
+            vid = search.videos[0];
         }
 
-        if (!sent) {
-            await conn.sendMessage(from, { react: { text: '❌', key: m.key } }).catch(() => {});
-            return reply("❌ *Failed to send file after download.*");
+        if (!vid) return reply("❌ No results found!");
+
+        const caption = `*╭┈───〔 ${toSmallCaps('Drama Downloader')} 〕┈───⊷*
+*├▢ 🎬 Title:* ${vid.title}
+*├▢ 📺 Channel:* ${vid.author?.name || 'Unknown'}
+*├▢ ⏰ Duration:* ${vid.timestamp}
+*├▢ 👀 Views:* ${vid.views?.toLocaleString() || 'N/A'}
+*╰───────────────────⊷*
+*╭───⬡ ${toSmallCaps('Select Format')} ⬡───*
+*┋ ⬡ 1* 📹 ${toSmallCaps('Video (MP4)')}
+*┋ ⬡ 2* 📄 ${toSmallCaps('Video as Document')}
+*╰───────────────────⊷*
+
+> Powered by ERFAN-MD`;
+
+        const sent = await conn.sendMessage(from, {
+            image: { url: vid.thumbnail },
+            caption
+        }, { quoted: mek });
+
+        const msgId = sent.key.id;
+
+        const dramaListener = async (msgData) => {
+            const received = msgData.messages[0];
+            if (!received.message) return;
+
+            const selected = received.message.conversation || received.message.extendedTextMessage?.text;
+            const replyToBot = received.message.extendedTextMessage?.contextInfo?.stanzaId === msgId;
+
+            if (replyToBot) {
+                conn.ev.off("messages.upsert", dramaListener);
+                await conn.sendMessage(from, { react: { text: '⬇️', key: received.key } });
+
+                const cleanSelect = selected?.trim();
+
+                if (cleanSelect === "1" || cleanSelect === "2") {
+                    const asDocument = cleanSelect === "2";
+
+                    const data = await fetchVideoData(vid.url);
+                    if (!data) {
+                        return await conn.sendMessage(from, {
+                            text: "❌ Failed to fetch video! Try again later."
+                        }, { quoted: received });
+                    }
+
+                    const ok = await sendVideo(conn, from, received, data, {
+                        asDocument,
+                        caption: asDocument
+                            ? `📄 *${data.title || vid.title}*\n📹 Video Document\n\n> Powered by ERFAN-MD`
+                            : `🎬 *${data.title || vid.title}*\n\n> Powered by ERFAN-MD`
+                    });
+
+                    if (!ok) {
+                        return await conn.sendMessage(from, {
+                            text: "❌ All video sources failed! Try again later."
+                        }, { quoted: received });
+                    }
+
+                    await conn.sendMessage(from, { react: { text: '✅', key: received.key } });
+                } else {
+                    await conn.sendMessage(from, {
+                        text: `❌ *Invalid selection!*\nPlease reply with:\n1️⃣ for Video (MP4)\n2️⃣ for Video as Document`
+                    }, { quoted: received });
+                }
+            }
+        };
+
+        conn.ev.on("messages.upsert", dramaListener);
+        setTimeout(() => { conn.ev.off("messages.upsert", dramaListener); }, 30000);
+
+    } catch (e) {
+        console.error(e);
+        reply(`❌ Error: ${e.message}`);
+        await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+    }
+});
+
+// ============================================
+// COMMAND: cartoon
+// ============================================
+cmd({
+    pattern: "cartoon",
+    alias: ["toon", "kids"],
+    desc: "Download YouTube cartoon video",
+    category: "download",
+    react: "🧸",
+    filename: __filename
+}, async (conn, mek, m, { from, text, reply }) => {
+    try {
+        if (!text) return reply("🧸 Please provide a cartoon name!\n\nExample: `.cartoon Tom and Jerry`");
+
+        const { default: yts } = await import('yt-search');
+
+        let url = text;
+        let vid = null;
+
+        if (text.startsWith('http://') || text.startsWith('https://')) {
+            if (!text.includes("youtube.com") && !text.includes("youtu.be")) {
+                return reply("❌ Please provide a valid YouTube URL!");
+            }
+            const videoId = getVideoId(text);
+            if (!videoId) return reply("❌ Invalid YouTube URL!");
+            vid = await yts({ videoId: videoId });
+        } else {
+            const search = await yts(`${text} cartoon`);
+            if (!search || !search.videos || !search.videos.length) {
+                return reply("❌ No cartoon results found!");
+            }
+            vid = search.videos[0];
+            url = vid.url;
         }
 
-        await conn.sendMessage(from, { react: { text: '✅', key: m.key } }).catch(() => {});
+        if (!vid) return reply("❌ No results found!");
 
-    } catch (err) {
-        console.error("❌ PLAY ERROR:", err);
-        await conn.sendMessage(from, { react: { text: '❌', key: m.key } }).catch(() => {});
-        return reply("❌ *Unexpected error. Please try again.*");
+        await conn.sendMessage(from, {
+            image: { url: vid.thumbnail },
+            caption: `*🧸 CARTOON DOWNLOADER*\n\n🎞️ *Title:* ${vid.title}\n📺 *Channel:* ${vid.author?.name || 'Unknown'}\n🕒 *Duration:* ${vid.timestamp}\n\n*Status:* Downloading Cartoon...\n\n> Powered by ERFAN-MD`
+        }, { quoted: mek });
+
+        const data = await fetchVideoData(url);
+        if (!data) return reply("❌ Failed to fetch cartoon! Try again later.");
+
+        const ok = await sendVideo(conn, from, mek, data, {
+            caption: `🧸 *${data.title || vid.title}*\n\n> Powered by ERFAN-MD`
+        });
+
+        if (!ok) return reply("❌ Failed to send cartoon! Try again later.");
+        await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+
+    } catch (e) {
+        console.error("Error in .cartoon command:", e);
+        reply("❌ Error occurred, please try again later!");
+        await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+    }
+});
+
+// ============================================
+// COMMAND: movie (send as document)
+// ============================================
+cmd({
+    pattern: "movie",
+    alias: ["playmovie", "dlmovie"],
+    desc: "Fast auto search with DP info and download full movie as document safely",
+    category: "download",
+    react: "🍿",
+    filename: __filename
+}, async (conn, mek, m, { from, text, reply }) => {
+    try {
+        if (!text) {
+            return reply("❌ *Please provide a movie name!*\n\nExample: `.movie DJ Ganesh Chaturthi`");
+        }
+
+        if (text.startsWith('http://') || text.startsWith('https://')) {
+            return reply("❌ URLs are not supported here.\nPlease send a movie *name* only.");
+        }
+
+        await conn.sendMessage(from, {
+            react: { text: "⚡", key: mek.key }
+        });
+
+        const { default: yts } = await import('yt-search');
+
+        const search = await yts(`${text} full movie`);
+        if (!search || !search.videos || !search.videos.length) {
+            return reply("❌ No results found!");
+        }
+
+        const vid = search.videos[0];
+
+        await conn.sendMessage(from, {
+            image: { url: vid.thumbnail },
+            caption: `*╭┈───〔 ${toSmallCaps('Movie Downloader')} 〕┈───⊷*
+*├▢ 🍿 Title:* ${vid.title}
+*├▢ 📺 Channel:* ${vid.author?.name || 'Unknown'}
+*├▢ ⏰ Duration:* ${vid.timestamp}
+*├▢ 👀 Views:* ${vid.views?.toLocaleString() || 'N/A'}
+*╰───────────────────⊷*
+_⚡ Downloading as document..._
+
+> Powered by ERFAN-MD`
+        }, { quoted: mek });
+
+        const data = await fetchVideoData(vid.url);
+        if (!data) return reply("❌ Failed to get movie! Try again later.");
+
+        const ok = await sendVideo(conn, from, mek, data, {
+            asDocument: true,
+            caption: `🍿 *${data.title || vid.title}*\n\n> Powered by ERFAN-MD`
+        });
+
+        if (!ok) return reply("❌ Failed to send movie! Try again later.");
+        await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
+
+    } catch (e) {
+        await reply("❌ Error: " + (e?.message || e));
+        await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
+    }
+});
+
+// ============================================
+// COMMAND: yts (Search) — unchanged
+// ============================================
+cmd({
+    pattern: "yts",
+    alias: ["ytsearch", "searchyt"],
+    use: '.yts ERFAN',
+    react: "🔎",
+    desc: "Search YouTube and get video details",
+    category: "search",
+    filename: __filename
+},
+async (conn, mek, m, { from, text, reply }) => {
+    try {
+        if (!text) return reply('*Please provide search words!*\n\nExample: .yts Alan Walker Faded');
+
+        const { default: yts } = await import('yt-search');
+
+        const search = await yts(text);
+
+        if (!search.videos || !search.videos.length) {
+            return reply('*No results found!*');
+        }
+
+        const results = search.videos.slice(0, 10);
+
+        let mesaj = `*╭┈───〔 ${toSmallCaps('YouTube Search')} 〕┈───⊷*\n`;
+        mesaj += `*├▢ 🔎 Query:* ${text}\n`;
+        mesaj += `*├▢ 📊 Results:* ${search.videos.length}\n`;
+        mesaj += `*╰───────────────────⊷*\n\n`;
+
+        results.forEach((video, i) => {
+            mesaj += `*${i + 1}. ${video.title}*\n`;
+            mesaj += `*├▢ 🔗 URL:* ${video.url}\n`;
+            mesaj += `*├▢ ⏱️ Duration:* ${video.timestamp}\n`;
+            mesaj += `*├▢ 👀 Views:* ${video.views?.toLocaleString() || 'N/A'}\n`;
+            mesaj += `*├▢ 👤 Channel:* ${video.author?.name || 'Unknown'}\n`;
+            mesaj += `*╰───────────────────⊷*\n\n`;
+        });
+
+        mesaj += `*╭───⬡ ${toSmallCaps('Powered By')} ⬡ ───*\n`;
+        mesaj += `*┋ ⬡ ${toSmallCaps('ERFAN-MD')}*\n`;
+        mesaj += `*╰───────────────────⊷*`;
+
+        await conn.sendMessage(from, { text: mesaj.trim() }, { quoted: mek });
+
+    } catch (e) {
+        console.error('Error in yts command:', e);
+        reply(`*Error occurred while searching!*\n\`\`\`${e.message}\`\`\``);
     }
 });
