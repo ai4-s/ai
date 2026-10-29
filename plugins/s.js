@@ -657,19 +657,18 @@ async function getDeliriusVideoData(url) {
 // ============================================
 // VIDEO COMMAND
 // ============================================
-
 cmd({
     pattern: "video",
-    alias: ["ytv", "ytmp4", "vd"],
+    alias: ["ytvideo", "mp4"],
     desc: "Download YouTube video",
     category: "download",
-    react: "📹",
+    react: "🧸",
     filename: __filename
 }, async (conn, mek, m, { from, text, reply }) => {
     try {
         if (!text) {
             return reply(
-                "🎥 Provide a YouTube link or video name.\nExample: .video Alone Marshmello"
+                "🧸 Provide a video name or YouTube link.\nExample: .video pal pal song"
             );
         }
 
@@ -682,7 +681,7 @@ cmd({
             const id = url.match(/[?&]v=([a-zA-Z0-9_-]{11})/)[1];
             vid = await yts({ videoId: id });
         } else {
-            const search = await yts(url);
+            const search = await yts(`${url}`);
             vid = search.videos?.[0];
             if (vid) url = vid.url;
         }
@@ -691,20 +690,18 @@ cmd({
 
         await conn.sendMessage(from, {
             image: { url: vid.thumbnail },
-            caption: `🎬 *VIDEO DOWNLOADER*
+            caption: `🧸 *video DOWNLOADER*
 
 📌 *Title:* ${vid.title}
 📺 *Channel:* ${vid.author?.name || "Unknown"}
-⏱️ *Duration:* ${vid.timestamp || "N/A"}
 
-⏳ Getting download link...
-> Powered by ERFAN-MD`
+⏳ Preparing download...
+> ERFAN-MD`
         }, { quoted: mek });
 
         const data = await getDeliriusVideoData(url);
 
-        // Download the actual MP4 instead of passing a remote URL
-        // directly to WhatsApp.
+        // Download MP4 into memory to avoid remote media fetch issues.
         const response = await axios.get(data.download, {
             responseType: "arraybuffer",
             timeout: 120000,
@@ -722,15 +719,11 @@ cmd({
             throw new Error("Invalid or empty MP4 response");
         }
 
-        const safeTitle = data.title
-            .replace(/[\\/:*?"<>|]/g, "_")
-            .slice(0, 150);
-
         await conn.sendMessage(from, {
             video: buffer,
             mimetype: "video/mp4",
-            fileName: `${safeTitle}.mp4`,
-            caption: `🎬 *${data.title}*\n📹 ${data.quality}\n\n> ERFAN-MD`
+            fileName: "ERFAN-Video.mp4",
+            caption: `🧸 *${data.title}*\n\n> ERFAN-MD`
         }, { quoted: mek });
 
         await conn.sendMessage(from, {
@@ -749,13 +742,10 @@ cmd({
         });
 
         return reply(
-            error.response?.status === 502
-                ? "❌ API/CDN returned 502 after retries. Check server logs and try again."
-                : `❌ Video download failed: ${error.message}`
+            `❌ Video download failed: ${error.message}`
         );
     }
 });
-
 // ============================================
 // DRAMA COMMAND
 // ============================================
