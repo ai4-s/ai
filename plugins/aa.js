@@ -93,7 +93,7 @@ async function getDeliriusVideoData(url) {
 // ============================================
 
 cmd({
-    pattern: "video",
+    pattern: "videoa",
     alias: ["ytv", "ytmp4", "vd"],
     desc: "Download YouTube video",
     category: "download",
@@ -195,7 +195,7 @@ cmd({
 // ============================================
 
 cmd({
-    pattern: "drama",
+    pattern: "dramaa",
     alias: ["film", "series"],
     desc: "Download YouTube drama",
     category: "download",
@@ -348,7 +348,7 @@ Reply to this message:
 // ============================================
 
 cmd({
-    pattern: "cartoon",
+    pattern: "cartoona",
     alias: ["toon", "kids"],
     desc: "Download YouTube cartoon",
     category: "download",
