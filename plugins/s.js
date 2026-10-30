@@ -11,6 +11,7 @@ const __filename = fileURLToPath(import.meta.url);
 const AUDIO_API_BASE = "https://rimi-xi.vercel.app/api/ytmp3";
 const VIDEO_API_BASE = "https://yts-7ih0.onrender.com/ytvideo";
 const VIDEO_API_KEY = "ERFANYT_SECRET";
+const VIDEO_DEFAULT_QUALITY = "auto";
 
 const toSmallCaps = (text) => {
     const map = {
@@ -60,10 +61,10 @@ const getAudioAPIs = (url) => [
 ];
 
 // ============================================
-// NEW VIDEO API
+// NEW VIDEO API (quality auto)
 // ============================================
 
-async function getErfanVideoData(url, quality = "360p") {
+async function getErfanVideoData(url, quality = VIDEO_DEFAULT_QUALITY) {
     const apiUrl = `${VIDEO_API_BASE}?url=${encodeURIComponent(url)}&key=${encodeURIComponent(VIDEO_API_KEY)}&quality=${encodeURIComponent(quality)}`;
 
     const response = await axios.get(apiUrl, {
@@ -314,7 +315,7 @@ cmd({
             video: videoBuffer,
             mimetype: "video/mp4",
             fileName: `${safeTitle}.mp4`,
-            caption: `🎬 *${title}*\n🎞️ ${apiData.quality || "360p"} MP4\n🔗 *Powered By ERFAN-MD*`
+            caption: `🎬 *${title}*\n🎞️ ${apiData.quality || VIDEO_DEFAULT_QUALITY} MP4\n🔗 *Powered By ERFAN-MD*`
         }, { quoted: mek });
 
         await conn.sendMessage(from, {
