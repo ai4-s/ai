@@ -47,6 +47,40 @@ function getVideoId(url) {
 }
 
 // ============================================
+// SMART VIDEO PICKER (skips promos/trailers)
+// ============================================
+function toSeconds(v) {
+    if (typeof v?.duration?.seconds === 'number') return v.duration.seconds;
+    if (typeof v?.seconds === 'number') return v.seconds;
+    const ts = v?.timestamp || v?.duration?.timestamp;
+    if (typeof ts === 'string' && ts.includes(':')) {
+        const parts = ts.split(':').map(Number);
+        if (parts.length === 2 && parts.every(n => !isNaN(n))) return parts[0] * 60 + parts[1];
+        if (parts.length === 3 && parts.every(n => !isNaN(n))) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    }
+    return 0;
+}
+
+function rankVideos(videos, preferWords = []) {
+    if (!Array.isArray(videos) || videos.length === 0) return [];
+    const arr = videos.slice();
+    const score = (v) => {
+        let s = 0;
+        const t = (v?.title || '').toLowerCase();
+        if (/\b(promo|trailer|teaser|preview|first\s*look)\b/.test(t)) s -= 1000;
+        const sec = toSeconds(v);
+        if (sec > 0 && sec < 120) s -= 500;
+        for (const w of preferWords) {
+            if (t.includes(w.toLowerCase())) s += 800;
+        }
+        if (sec > 0) s += Math.min(sec / 60, 100);
+        return s;
+    };
+    arr.sort((a, b) => score(b) - score(a));
+    return arr;
+}
+
+// ============================================
 // AUDIO API
 // ============================================
 const getAudioAPIs = (url) => [
@@ -54,15 +88,12 @@ const getAudioAPIs = (url) => [
 ];
 
 // ============================================
-// VIDEO API (multi-format fallback, matches your working example)
+// VIDEO API
 // ============================================
 async function getErfanVideoData(url) {
     const id = getVideoId(url);
     if (!id) throw new Error("Could not extract video ID from URL.");
 
-    // Format 1: youtu.be/ID + quality=360p (your exact working example)
-    // Format 2: youtu.be/ID (no quality — API default)
-    // Format 3: youtube.com/watch?v=ID + quality=360p (encoded, last resort)
     const attempts = [
         { url: `https://youtu.be/${id}`, q: "360p", encoded: false },
         { url: `https://youtu.be/${id}`, q: null, encoded: false },
@@ -77,8 +108,6 @@ async function getErfanVideoData(url) {
             const urlParam = a.encoded ? encodeURIComponent(a.url) : a.url;
             let apiUrl = `${VIDEO_API_BASE}?url=${urlParam}&key=${VIDEO_API_KEY}`;
             if (a.q) apiUrl += `&quality=${a.q}`;
-
-            console.log(`[YT-API] attempt ${i + 1}: ${apiUrl}`);
 
             const response = await axios.get(apiUrl, {
                 timeout: 90000,
@@ -97,7 +126,6 @@ async function getErfanVideoData(url) {
                 typeof data.download === "string" &&
                 data.download.startsWith("http")
             ) {
-                console.log(`[YT-API] success attempt ${i + 1}: ${data.title}`);
                 return {
                     title: (data.title || "").toString().trim() || "YouTube Video",
                     author: data.author || "Unknown",
@@ -107,20 +135,14 @@ async function getErfanVideoData(url) {
                 };
             }
 
-            lastError = new Error(
-                body?.message || body?.error || `HTTP ${response.status}`
-            );
-            console.log(`[YT-API] attempt ${i + 1} failed: ${lastError.message}`);
+            lastError = new Error(body?.message || body?.error || `HTTP ${response.status}`);
         } catch (e) {
             lastError = e;
-            console.log(`[YT-API] attempt ${i + 1} error: ${e.message}`);
         }
     }
-
     throw lastError || new Error("Video API failed.");
 }
 
-// Try multiple videos until one works (handles "No download link" errors)
 async function fetchVideoFromCandidates(candidates) {
     let lastError = null;
     for (let i = 0; i < candidates.length; i++) {
@@ -135,7 +157,6 @@ async function fetchVideoFromCandidates(candidates) {
     throw lastError || new Error("All candidate videos failed.");
 }
 
-// Stream download to temp file with CDN status check
 async function downloadToTemp(url, prefix) {
     const tempFile = path.join(os.tmpdir(), `${prefix}_${Date.now()}.mp4`);
 
@@ -173,7 +194,6 @@ async function downloadToTemp(url, prefix) {
         try { fs.unlinkSync(tempFile); } catch {}
         throw new Error("Downloaded file is empty or too small.");
     }
-
     return tempFile;
 }
 
@@ -285,8 +305,9 @@ cmd({
         } else {
             const search = await yts(url);
             if (!search.videos?.length) return reply("❌ No video results found!");
-            vid = search.videos[0];
-            candidates = search.videos.slice(0, 3).map(v => ({ url: v.url }));
+            const ranked = rankVideos(search.videos, []);
+            vid = ranked[0];
+            candidates = ranked.slice(0, 3).map(v => ({ url: v.url }));
         }
 
         if (!vid) return reply("❌ No video results found!");
@@ -534,8 +555,9 @@ cmd({
         } else {
             const search = await yts(url);
             if (!search.videos?.length) return reply("❌ No results found!");
-            vid = search.videos[0];
-            candidates = search.videos.slice(0, 3).map(v => ({ url: v.url }));
+            const ranked = rankVideos(search.videos, ['episode', 'full', 'part']);
+            vid = ranked[0];
+            candidates = ranked.slice(0, 3).map(v => ({ url: v.url }));
         }
 
         if (!vid) return reply("❌ No results found!");
@@ -607,8 +629,9 @@ cmd({
         } else {
             const search = await yts(`${text} cartoon`);
             if (!search.videos?.length) return reply("❌ No cartoon results found!");
-            vid = search.videos[0];
-            candidates = search.videos.slice(0, 3).map(v => ({ url: v.url }));
+            const ranked = rankVideos(search.videos, ['episode', 'full']);
+            vid = ranked[0];
+            candidates = ranked.slice(0, 3).map(v => ({ url: v.url }));
         }
 
         if (!vid) return reply("❌ No results found!");
@@ -683,8 +706,9 @@ cmd({
         const search = await yts(`${text} full movie`);
         if (!search?.videos?.length) return reply("❌ No results found!");
 
-        const vid = search.videos[0];
-        const candidates = search.videos.slice(0, 3).map(v => ({ url: v.url }));
+        const ranked = rankVideos(search.videos, ['full movie', 'full film']);
+        const vid = ranked[0];
+        const candidates = ranked.slice(0, 3).map(v => ({ url: v.url }));
 
         await conn.sendMessage(from, {
             image: { url: vid.thumbnail },
