@@ -590,7 +590,7 @@ Please reply with:
 
 cmd({
     pattern: "drama",
-    alias: ["ytdrama", "series"],
+    alias: ["playdrama", "dldrama"],
     desc: "Search YouTube and download drama as document",
     category: "download",
     react: "🍿",
@@ -601,13 +601,13 @@ cmd({
     try {
         if (!text) {
             return reply(
-                "❌ *Please provide a movie name!*\n\nExample: `.drama mahobat EP 1`"
+                "❌ *Please provide a drama name!*\n\nExample: `.drama DJ Ganesh Chaturthi`"
             );
         }
 
         if (text.startsWith('http://') || text.startsWith('https://')) {
             return reply(
-                "❌ URLs are not supported here.\nPlease send a  *name* only."
+                "❌ URLs are not supported here.\nPlease send a drama *name* only."
             );
         }
 
@@ -616,7 +616,7 @@ cmd({
         });
 
         const { default: yts } = await import('yt-search');
-        const search = await yts(`${text} `);
+        const search = await yts(`${text}`);
 
         if (!search || !search.videos || !search.videos.length) {
             return reply("❌ No results found!");
