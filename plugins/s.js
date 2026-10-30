@@ -787,7 +787,7 @@ cmd({
             vid = await yts({ videoId });
             url = text;
         } else {
-            const search = await yts(`${text} `);
+            const search = await yts(`${text}`);
 
             if (!search || !search.videos || !search.videos.length) {
                 return reply("❌ No cartoon results found!");
