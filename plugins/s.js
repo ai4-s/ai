@@ -5,10 +5,12 @@ import axios from 'axios';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
 
 const __filename = fileURLToPath(import.meta.url);
 
-const VIDEO_API_BASE = "https://rimi-xi.vercel.app/api/ytmp4";
+// FIXED: working video API (same one used in the working file)
+const VIDEO_API_BASE = "https://api.delirius.online/download/ytmp4";
 const AUDIO_API_BASE = "https://rimi-xi.vercel.app/api/ytmp3";
 
 const toSmallCaps = (text) => {
@@ -48,7 +50,7 @@ function getVideoId(url) {
 }
 
 // ============================================
-// VIDEO API
+// VIDEO API - FIXED (Delirius)
 // ============================================
 
 const getAudioAPIs = (url) => [
@@ -59,47 +61,153 @@ const getAudioAPIs = (url) => [
 ];
 
 const getNormalVideoAPIs = (url) => [
-    `${VIDEO_API_BASE}?url=${encodeURIComponent(url)}`
+    `${VIDEO_API_BASE}?url=${encodeURIComponent(url)}&format=360p`
 ];
 
 const getFallbackVideoAPI = (url) =>
-    `${VIDEO_API_BASE}?url=${encodeURIComponent(url)}`;
+    `${VIDEO_API_BASE}?url=${encodeURIComponent(url)}&format=360p`;
 
 async function getDeliriusVideoData(url) {
-    const response = await axios.get(getFallbackVideoAPI(url), {
-        timeout: 60000,
-        headers: {
-            "User-Agent": "Mozilla/5.0"
+    let lastErr;
+
+    // Up to 2 attempts so a single temporary API failure does not break the command
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+            const response = await axios.get(getFallbackVideoAPI(url), {
+                timeout: 45000,
+                headers: { "User-Agent": "Mozilla/5.0" }
+            });
+
+            const data = response.data;
+
+            if (
+                !data?.status ||
+                typeof data?.data?.download !== "string" ||
+                !data.data.download.startsWith("http")
+            ) {
+                throw new Error(
+                    data?.message ||
+                    "Video API did not return a download link."
+                );
+            }
+
+            const d = data.data;
+
+            return {
+                ...d,
+                title: typeof d.title === "string" && d.title.trim()
+                    ? d.title.trim()
+                    : "YouTube Video",
+                download: d.download,
+                quality: d.format || d.quality || "360p MP4"
+            };
+        } catch (e) {
+            lastErr = e;
+            console.error(`⚠️ Video API attempt ${attempt} failed:`, e?.message);
+
+            if (attempt < 2) {
+                await new Promise((r) => setTimeout(r, 1500));
+            }
         }
-    });
-
-    const data = response.data;
-
-    if (
-        data?.ok !== true ||
-        typeof data?.download !== "string" ||
-        !data.download.startsWith("http")
-    ) {
-        throw new Error(
-            data?.message ||
-            "YouTube video API did not return a valid download link."
-        );
     }
 
-    return {
-        title: typeof data.title === "string" && data.title.trim()
-            ? data.title.trim()
-            : "YouTube Video",
-        download: data.download,
-        quality: data.quality || "360p",
-        author: data.author || "Unknown",
-        thumbnail: data.thumbnail || null,
-        duration: data.duration || null
-    };
+    throw lastErr;
 }
 
 // ============================================
-// COMMAND: PLAY (AUDIO)
+// SHARED VIDEO HELPERS (retry, safe download, smart send)
+// ============================================
+
+const MAX_VIDEO_BYTES = 60 * 1024 * 1024; // WhatsApp inline-video limit (~64MB); larger goes as document
+
+const DOWNLOAD_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "*/*"
+};
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const safeFileName = (name) =>
+    String(name || "video").replace(/[\\/:*?"<>|]/g, "_").slice(0, 180);
+
+const removeFile = (file) => {
+    try {
+        if (file && fs.existsSync(file)) fs.unlinkSync(file);
+    } catch {}
+};
+
+// Calls the video API (retry logic lives inside getDeliriusVideoData)
+async function getVideoDataSafe(url) {
+    return getDeliriusVideoData(url);
+}
+
+// Streams the file to disk (no RAM problems with big videos / dramas)
+async function downloadToTemp(downloadUrl, prefix = "video") {
+    const tempFile = path.join(
+        os.tmpdir(),
+        `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.mp4`
+    );
+
+    try {
+        const res = await axios({
+            method: "GET",
+            url: downloadUrl,
+            responseType: "stream",
+            timeout: 60000, // connection timeout only; the stream itself can take longer
+            maxRedirects: 5,
+            headers: DOWNLOAD_HEADERS
+        });
+
+        const type = res.headers?.["content-type"] || "";
+        if (type.includes("text/html") || type.includes("application/json")) {
+            res.data.destroy();
+            throw new Error("The download link returned an invalid file.");
+        }
+
+        await pipeline(res.data, fs.createWriteStream(tempFile));
+
+        const size = fs.statSync(tempFile).size;
+        if (size < 10000) {
+            throw new Error("The downloaded video file is empty or invalid.");
+        }
+
+        return { tempFile, size };
+    } catch (e) {
+        removeFile(tempFile);
+        throw e;
+    }
+}
+
+// Sends as video when small enough, otherwise (or if video send fails) as document
+async function sendVideoSmart(conn, from, quoted, { tempFile, size, title, caption, asDocument }) {
+    const fileName = `${safeFileName(title)}.mp4`;
+
+    if (!asDocument && size <= MAX_VIDEO_BYTES) {
+        try {
+            await conn.sendMessage(from, {
+                video: { url: tempFile },
+                mimetype: "video/mp4",
+                fileName,
+                caption
+            }, { quoted });
+            return "video";
+        } catch (e) {
+            console.error("⚠️ Video send failed, falling back to document:", e?.message);
+        }
+    }
+
+    await conn.sendMessage(from, {
+        document: { url: tempFile },
+        mimetype: "video/mp4",
+        fileName,
+        caption
+    }, { quoted });
+
+    return "document";
+}
+
+// ============================================
+// COMMAND: PLAY (AUDIO) - PRESERVED
 // ============================================
 
 cmd({
@@ -187,7 +295,10 @@ cmd({
                     success = true;
                     break;
                 } catch (sendErr) {
-                    console.error(`⚠️ Audio send failed:`, sendErr.message);
+                    console.error(
+                        `⚠️ Audio send failed:`,
+                        sendErr.message
+                    );
                 }
             } catch (e) {
                 console.error(`⚠️ Audio API failed:`, e.message);
@@ -213,11 +324,12 @@ cmd({
 });
 
 // ============================================
-// COMMAND: VIDEOA - FIXED
+// COMMAND: VIDEO
+// Under 1 hour -> sent as video | Over 1 hour -> sent as document (no extra message)
 // ============================================
 
 cmd({
-    pattern: "video",
+    pattern: "videoa",
     alias: ["ytv", "ytmp4", "vd"],
     desc: "Download YouTube video using ERFAN-MD video API",
     category: "download",
@@ -243,13 +355,10 @@ cmd({
                 return reply("❌ Please provide a valid YouTube URL!");
             }
 
-            const match = url.match(
-                /(?:youtu\.be\/|youtube\.com\/(?:watch\?.*v=|shorts\/|embed\/|live\/))([a-zA-Z0-9_-]{11})/
-            );
+            const videoId = getVideoId(url);
+            if (!videoId) return reply("❌ Invalid YouTube URL!");
 
-            if (!match) return reply("❌ Invalid YouTube URL!");
-
-            vid = await yts({ videoId: match[1] });
+            vid = await yts({ videoId });
         } else {
             const search = await yts(url);
             vid = search.videos?.[0];
@@ -270,97 +379,85 @@ cmd({
 ╰─────────────🎬
 🔗 *Powered By ERFAN-MD*`;
 
-        await conn.sendMessage(from, {
-            image: { url: vid.thumbnail },
-            caption: detailsCaption
-        }, { quoted: mek });
+        try {
+            await conn.sendMessage(from, {
+                image: { url: vid.thumbnail },
+                caption: detailsCaption
+            }, { quoted: mek });
+        } catch (e) {
+            await conn.sendMessage(from, { text: detailsCaption }, { quoted: mek });
+        }
 
         await conn.sendMessage(from, {
             react: { text: "⬇️", key: m.key }
         });
 
-        const apiData = await getDeliriusVideoData(url);
+        // More than 1 hour => document, otherwise video
+        const isLong = (Number(vid.seconds) || 0) > 3600;
+
+        const apiData = await getVideoDataSafe(url);
         const title = apiData.title || vid.title;
-        const videoDownloadUrl = apiData.download;
 
-        // Stream to disk (no headers, avoids OOM and hanging)
-        tempFile = path.join(os.tmpdir(), `video_${Date.now()}.mp4`);
+        const dl = await downloadToTemp(apiData.download, "video");
+        tempFile = dl.tempFile;
 
-        const fileRes = await axios({
-            method: 'GET',
-            url: videoDownloadUrl,
-            responseType: 'stream',
-            timeout: 180000,
-            maxBodyLength: Infinity,
-            maxContentLength: Infinity
-        });
+        const fileName = `${safeFileName(title)}.mp4`;
+        const caption = `🎬 *${title}*\n🎞️ ${apiData.quality || "360p MP4"}\n🔗 *Powered By ERFAN-MD*`;
 
-        const writer = fs.createWriteStream(tempFile);
-        fileRes.data.pipe(writer);
+        let sent = false;
 
-        await new Promise((resolve, reject) => {
-            writer.on('finish', resolve);
-            writer.on('error', reject);
-            fileRes.data.on('error', reject);
-        });
-
-        const stats = fs.statSync(tempFile);
-        if (stats.size < 10000) {
-            throw new Error("The API returned an invalid or empty video file.");
+        if (!isLong) {
+            try {
+                await conn.sendMessage(from, {
+                    video: { url: tempFile },
+                    mimetype: "video/mp4",
+                    fileName,
+                    caption
+                }, { quoted: mek });
+                sent = true;
+            } catch (e) {
+                console.error("[VIDEO] Video send failed, sending as document:", e?.message);
+            }
         }
 
-        const safeTitle = title.replace(/[\\/:*?"<>|]/g, "_").slice(0, 180);
-
-        await conn.sendMessage(from, {
-            video: { url: tempFile },
-            mimetype: "video/mp4",
-            fileName: `${safeTitle}.mp4`,
-            caption: `🎬 *${title}*\n🎞️ ${apiData.quality || "360p"} MP4\n🔗 *Powered By ERFAN-MD*`
-        }, { quoted: mek });
-
-        try {
-            if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
-        } catch {}
-
-        tempFile = null;
+        if (!sent) {
+            await conn.sendMessage(from, {
+                document: { url: tempFile },
+                mimetype: "video/mp4",
+                fileName,
+                caption
+            }, { quoted: mek });
+        }
 
         await conn.sendMessage(from, {
             react: { text: "✅", key: m.key }
         });
 
     } catch (error) {
-        try {
-            if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
-        } catch {}
-
         console.error(
             "[VIDEO] Error:",
-            error?.response?.status || "",
             error?.response?.data || error?.message || error
         );
 
-        await conn.sendMessage(from, {
-            react: { text: "❌", key: m.key }
-        });
-
-        const status = error?.response?.status;
-
-        if (status === 502 || status === 503 || status === 504) {
-            return reply(
-                "❌ *CDN 502 — savetube server is down or link expired.*\n\n💡 Try again in a few seconds."
-            );
-        }
+        try {
+            await conn.sendMessage(from, {
+                react: { text: "❌", key: m.key }
+            });
+        } catch {}
 
         return reply(
             error?.code === "ECONNABORTED"
                 ? "❌ Video download timed out. Please try again."
                 : `❌ Video download failed: ${error?.message || "Please try again later."}`
         );
+    } finally {
+        removeFile(tempFile);
+        if (global.gc) global.gc();
     }
 });
 
 // ============================================
-// COMMAND: SONG (INTERACTIVE)
+// COMMAND: SONG (INTERACTIVE) - PRESERVED
 // ============================================
 
 cmd({
@@ -515,50 +612,24 @@ Please reply with:
 
                 try {
                     const apiData = await getDeliriusVideoData(url);
-                    const videoUrl = apiData.download;
                     const title = apiData.title || vid.title;
 
-                    // Download to disk first (avoids Baileys fetch 502)
-                    tempFile = path.join(os.tmpdir(), `video_${Date.now()}.mp4`);
+                    const dl = await downloadToTemp(apiData.download, "video");
+                    tempFile = dl.tempFile;
 
-                    const fileRes = await axios({
-                        method: 'GET',
-                        url: videoUrl,
-                        responseType: 'stream',
-                        timeout: 180000,
-                        maxBodyLength: Infinity,
-                        maxContentLength: Infinity
+                    await sendVideoSmart(conn, from, received, {
+                        tempFile,
+                        size: dl.size,
+                        title,
+                        asDocument,
+                        caption: asDocument
+                            ? `📄 *${title}*\n📹 Video Document\n\n> Powered by ERFAN-MD`
+                            : `🎬 *${title}*\n\n> Powered by ERFAN-MD`
                     });
 
-                    const writer = fs.createWriteStream(tempFile);
-                    fileRes.data.pipe(writer);
-
-                    await new Promise((resolve, reject) => {
-                        writer.on('finish', resolve);
-                        writer.on('error', reject);
-                        fileRes.data.on('error', reject);
-                    });
-
-                    if (!asDocument) {
-                        await conn.sendMessage(from, {
-                            video: { url: tempFile },
-                            mimetype: "video/mp4",
-                            caption: `🎬 *${title}*\n\n> Powered by ERFAN-MD`
-                        }, { quoted: received });
-                    } else {
-                        await conn.sendMessage(from, {
-                            document: { url: tempFile },
-                            mimetype: "video/mp4",
-                            fileName: `${title}.mp4`,
-                            caption: `📄 *${title}*\n📹 Video Document\n\n> Powered by ERFAN-MD`
-                        }, { quoted: received });
-                    }
-
-                    try {
-                        if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
-                    } catch {}
-
+                    removeFile(tempFile);
                     tempFile = null;
+
                     success = true;
                 } catch (e) {
                     console.error("⚠️ Video download failed:", e.message);
@@ -599,17 +670,20 @@ Please reply with:
 });
 
 // ============================================
-// COMMAND: DRAMA - FIXED
+// COMMAND: DRAMA
+// Always sent as document (no format menu)
 // ============================================
 
 cmd({
     pattern: "drama",
     alias: ["film", "series"],
-    desc: "Download YouTube drama/movie video (interactive)",
+    desc: "Download YouTube drama/movie as document",
     category: "download",
     react: "🎬",
     filename: __filename
 }, async (conn, mek, m, { from, text, reply }) => {
+    let tempFile = null;
+
     try {
         if (!text) {
             return reply(
@@ -620,20 +694,19 @@ cmd({
         const { default: yts } = await import('yt-search');
 
         let vid = null;
-        let url = text;
+        let url = text.trim();
 
-        if (text.startsWith('http://') || text.startsWith('https://')) {
-            if (!text.includes("youtube.com") && !text.includes("youtu.be")) {
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+            if (!url.includes("youtube.com") && !url.includes("youtu.be")) {
                 return reply("❌ Please provide a valid YouTube URL!");
             }
 
-            const videoId = getVideoId(text);
+            const videoId = getVideoId(url);
             if (!videoId) return reply("❌ Invalid YouTube URL!");
 
             vid = await yts({ videoId });
-            url = text;
         } else {
-            const search = await yts(text);
+            const search = await yts(url);
 
             if (!search || !search.videos || !search.videos.length) {
                 return reply("❌ No results found!");
@@ -651,130 +724,53 @@ cmd({
 *├▢ ⏰ Duration:* ${vid.timestamp}
 *├▢ 👀 Views:* ${vid.views?.toLocaleString() || 'N/A'}
 *╰───────────────────⊷*
-*╭───⬡ ${toSmallCaps('Select Format')} ⬡───*
-*┋ ⬡ 1* 📹 ${toSmallCaps('Video (MP4)')}
-*┋ ⬡ 2* 📄 ${toSmallCaps('Video as Document')}
-*╰───────────────────⊷*
+_⚡ Downloading as document..._
 
 > Powered by ERFAN-MD`;
 
-        const sent = await conn.sendMessage(from, {
-            image: { url: vid.thumbnail },
-            caption
-        }, { quoted: mek });
-
-        const msgId = sent.key.id;
-
-        const dramaListener = async (msgData) => {
-            const received = msgData.messages[0];
-            if (!received.message) return;
-
-            const selected =
-                received.message.conversation ||
-                received.message.extendedTextMessage?.text;
-
-            const replyToBot =
-                received.message.extendedTextMessage?.contextInfo?.stanzaId === msgId;
-
-            if (!replyToBot) return;
-
-            conn.ev.off("messages.upsert", dramaListener);
-
+        try {
             await conn.sendMessage(from, {
-                react: { text: '⬇️', key: received.key }
-            });
-
-            const cleanSelect = selected?.trim();
-
-            if (!["1", "2"].includes(cleanSelect)) {
-                return conn.sendMessage(from, {
-                    text: `❌ *Invalid selection!*
-Please reply with:
-1️⃣ for Video (MP4)
-2️⃣ for Video as Document`
-                }, { quoted: received });
-            }
-
-            const asDocument = cleanSelect === "2";
-            let tempFile = null;
-
-            try {
-                const apiData = await getDeliriusVideoData(url);
-                const videoUrl = apiData.download;
-                const title = apiData.title || vid.title;
-
-                // Download to disk first (avoids Baileys fetch 502)
-                tempFile = path.join(os.tmpdir(), `video_${Date.now()}.mp4`);
-
-                const fileRes = await axios({
-                    method: 'GET',
-                    url: videoUrl,
-                    responseType: 'stream',
-                    timeout: 180000,
-                    maxBodyLength: Infinity,
-                    maxContentLength: Infinity
-                });
-
-                const writer = fs.createWriteStream(tempFile);
-                fileRes.data.pipe(writer);
-
-                await new Promise((resolve, reject) => {
-                    writer.on('finish', resolve);
-                    writer.on('error', reject);
-                    fileRes.data.on('error', reject);
-                });
-
-                if (!asDocument) {
-                    await conn.sendMessage(from, {
-                        video: { url: tempFile },
-                        mimetype: "video/mp4",
-                        caption: `🎬 *${title}*\n\n> Powered by ERFAN-MD`
-                    }, { quoted: received });
-                } else {
-                    await conn.sendMessage(from, {
-                        document: { url: tempFile },
-                        mimetype: "video/mp4",
-                        fileName: `${title}.mp4`,
-                        caption: `🍿 *${title}*\n\n> Powered by ERFAN-MD`
-                    }, { quoted: received });
-                }
-
-                try {
-                    if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
-                } catch {}
-
-                tempFile = null;
-
-                await conn.sendMessage(from, {
-                    react: { text: '✅', key: received.key }
-                });
-
-            } catch (e) {
-                console.error("⚠️ Drama download failed:", e.message);
-
-                try {
-                    if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
-                } catch {}
-
-                await conn.sendMessage(from, {
-                    text: "❌ Video download failed! Try again later."
-                }, { quoted: received });
-            }
-        };
-
-        conn.ev.on("messages.upsert", dramaListener);
-
-        setTimeout(() => {
-            conn.ev.off("messages.upsert", dramaListener);
-        }, 30000);
-
-    } catch (e) {
-        console.error(e);
-        reply(`❌ Error: ${e.message}`);
+                image: { url: vid.thumbnail },
+                caption
+            }, { quoted: mek });
+        } catch (e) {
+            await conn.sendMessage(from, { text: caption }, { quoted: mek });
+        }
 
         await conn.sendMessage(from, {
-            react: { text: '❌', key: m.key }
+            react: { text: '⬇️', key: m.key }
         });
+
+        const apiData = await getVideoDataSafe(url);
+        const title = apiData.title || vid.title;
+
+        const dl = await downloadToTemp(apiData.download, "drama");
+        tempFile = dl.tempFile;
+
+        await conn.sendMessage(from, {
+            document: { url: tempFile },
+            mimetype: "video/mp4",
+            fileName: `${safeFileName(title)}.mp4`,
+            caption: `🍿 *${title}*\n\n> Powered by ERFAN-MD`
+        }, { quoted: mek });
+
+        await conn.sendMessage(from, {
+            react: { text: '✅', key: m.key }
+        });
+
+    } catch (e) {
+        console.error("⚠️ Drama download failed:", e?.response?.data || e?.message || e);
+
+        try {
+            await conn.sendMessage(from, {
+                react: { text: '❌', key: m.key }
+            });
+        } catch {}
+
+        reply(`❌ Video download failed! ${e?.message || "Try again later."}`);
+    } finally {
+        removeFile(tempFile);
+        if (global.gc) global.gc();
     }
 });
 
@@ -840,40 +836,27 @@ cmd({
         }, { quoted: mek });
 
         const apiData = await getDeliriusVideoData(url);
-        const videoUrl = apiData.download;
         const title = apiData.title || vid.title;
 
-        // Download to disk first (avoids Baileys fetch 502)
-        tempFile = path.join(os.tmpdir(), `cartoon_${Date.now()}.mp4`);
+        // Stream to a local temp file (not RAM), then send from disk
+        const dl = await downloadToTemp(apiData.download, "cartoon");
+        tempFile = dl.tempFile;
 
-        const fileRes = await axios({
-            method: 'GET',
-            url: videoUrl,
-            responseType: 'stream',
-            timeout: 180000,
-            maxBodyLength: Infinity,
-            maxContentLength: Infinity
-        });
-
-        const writer = fs.createWriteStream(tempFile);
-        fileRes.data.pipe(writer);
-
-        await new Promise((resolve, reject) => {
-            writer.on('finish', resolve);
-            writer.on('error', reject);
-            fileRes.data.on('error', reject);
-        });
-
-        await conn.sendMessage(from, {
-            video: { url: tempFile },
-            mimetype: "video/mp4",
+        const sentAs = await sendVideoSmart(conn, from, mek, {
+            tempFile,
+            size: dl.size,
+            title,
+            asDocument: false,
             caption: `🧸 *${title}*\n\n> Powered by ERFAN-MD`
-        }, { quoted: mek });
+        });
 
-        try {
-            if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
-        } catch {}
+        if (sentAs === "document") {
+            await conn.sendMessage(from, {
+                text: "ℹ️ This video is too large for WhatsApp video format, so it was sent as a document."
+            }, { quoted: mek });
+        }
 
+        removeFile(tempFile);
         tempFile = null;
 
         await conn.sendMessage(from, {
@@ -885,6 +868,8 @@ cmd({
             if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
         } catch {}
 
+        if (global.gc) global.gc();
+
         console.error("Error in .cartoon command:", e);
         reply("❌ Error occurred, please try again later!");
 
@@ -895,7 +880,7 @@ cmd({
 });
 
 // ============================================
-// COMMAND: MOVIEA
+// COMMAND: MOVIE
 // ============================================
 
 cmd({
@@ -957,9 +942,7 @@ _⚡ Downloading as document..._
             method: 'GET',
             url: downloadURL,
             responseType: 'stream',
-            timeout: 180000,
-            maxBodyLength: Infinity,
-            maxContentLength: Infinity
+            timeout: 120000
         });
 
         const writer = fs.createWriteStream(tempFile);
@@ -982,6 +965,7 @@ _⚡ Downloading as document..._
             if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
         } catch {}
 
+        if (global.gc) global.gc();
         tempFile = null;
 
         await conn.sendMessage(from, {
@@ -993,6 +977,8 @@ _⚡ Downloading as document..._
             if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
         } catch {}
 
+        if (global.gc) global.gc();
+
         await reply("❌ Error: " + (e?.message || e));
 
         await conn.sendMessage(from, {
@@ -1002,7 +988,7 @@ _⚡ Downloading as document..._
 });
 
 // ============================================
-// COMMAND: YTS
+// COMMAND: YTS (YOUTUBE SEARCH) - PRESERVED
 // ============================================
 
 cmd({
