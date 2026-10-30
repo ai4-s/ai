@@ -11,7 +11,6 @@ const __filename = fileURLToPath(import.meta.url);
 const AUDIO_API_BASE = "https://rimi-xi.vercel.app/api/ytmp3";
 const VIDEO_API_BASE = "https://yts-7ih0.onrender.com/ytvideo";
 const VIDEO_API_KEY = "ERFANYT_SECRET";
-const VIDEO_DEFAULT_QUALITY = "360p";
 
 const toSmallCaps = (text) => {
     const map = {
@@ -49,13 +48,6 @@ function getVideoId(url) {
     return null;
 }
 
-// Build a clean YouTube URL (removes playlist / tracking params that cause 400)
-function cleanYouTubeUrl(url) {
-    const id = getVideoId(url);
-    if (id) return `https://www.youtube.com/watch?v=${id}`;
-    return url;
-}
-
 // ============================================
 // AUDIO API
 // ============================================
@@ -68,44 +60,81 @@ const getAudioAPIs = (url) => [
 ];
 
 // ============================================
-// VIDEO API (quality fixed at 360p)
+// VIDEO API (no quality param, youtu.be format, retry once)
 // ============================================
 
-async function getErfanVideoData(url, quality = VIDEO_DEFAULT_QUALITY) {
-    const cleanUrl = cleanYouTubeUrl(url);
-    const apiUrl = `${VIDEO_API_BASE}?url=${encodeURIComponent(cleanUrl)}&key=${encodeURIComponent(VIDEO_API_KEY)}&quality=${encodeURIComponent(quality)}`;
-
-    const response = await axios.get(apiUrl, {
-        timeout: 60000,
-        headers: {
-            "User-Agent": "Mozilla/5.0"
-        }
-    });
-
-    const json = response.data;
-
-    if (
-        json?.status !== true ||
-        !json?.data ||
-        typeof json.data.download !== "string" ||
-        !json.data.download.startsWith("http")
-    ) {
-        throw new Error(
-            json?.message ||
-            "YouTube video API did not return a valid download link."
-        );
+async function getErfanVideoData(url) {
+    const id = getVideoId(url);
+    if (!id) {
+        throw new Error("Invalid YouTube URL. Could not extract video ID.");
     }
 
-    return {
-        title: typeof json.data.title === "string" && json.data.title.trim()
-            ? json.data.title.trim()
-            : "YouTube Video",
-        author: json.data.author || "Unknown",
-        thumbnail: json.data.image || null,
-        format: json.data.format || "mp4",
-        quality: quality,
-        download: json.data.download
-    };
+    const cleanUrl = `https://youtu.be/${id}`;
+    const apiUrl = `${VIDEO_API_BASE}?url=${cleanUrl}&key=${VIDEO_API_KEY}`;
+
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+            const response = await axios.get(apiUrl, {
+                timeout: 90000,
+                headers: {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                },
+                validateStatus: () => true
+            });
+
+            const body = response.data;
+
+            if (response.status === 200) {
+                const ok = body?.status === true || body?.status === "true";
+                const data = body?.data;
+
+                if (
+                    ok &&
+                    data &&
+                    typeof data.download === "string" &&
+                    data.download.startsWith("http")
+                ) {
+                    return {
+                        title: (typeof data.title === "string" && data.title.trim())
+                            ? data.title.trim()
+                            : "YouTube Video",
+                        author: data.author || "Unknown",
+                        thumbnail: data.image || null,
+                        format: data.format || "mp4",
+                        download: data.download
+                    };
+                }
+
+                lastError = new Error(
+                    body?.message ||
+                    body?.error ||
+                    "API did not return a valid download link."
+                );
+            } else {
+                let msg = body?.message || body?.error;
+
+                if (!msg && typeof body === "string") {
+                    msg = body.slice(0, 200);
+                }
+
+                lastError = new Error(
+                    msg || `API returned status ${response.status}`
+                );
+            }
+        } catch (e) {
+            lastError = new Error(
+                e?.message || "Network error while calling video API."
+            );
+        }
+
+        if (attempt === 1) {
+            await new Promise(r => setTimeout(r, 1500));
+        }
+    }
+
+    throw lastError || new Error("Video API failed.");
 }
 
 // ============================================
@@ -197,10 +226,7 @@ cmd({
                     success = true;
                     break;
                 } catch (sendErr) {
-                    console.error(
-                        `⚠️ Audio send failed:`,
-                        sendErr.message
-                    );
+                    console.error(`⚠️ Audio send failed:`, sendErr.message);
                 }
             } catch (e) {
                 console.error(`⚠️ Audio API failed:`, e.message);
@@ -296,7 +322,7 @@ cmd({
 
         const videoRes = await axios.get(videoDownloadUrl, {
             responseType: "arraybuffer",
-            timeout: 120000,
+            timeout: 180000,
             maxContentLength: 500 * 1024 * 1024,
             maxBodyLength: 500 * 1024 * 1024,
             headers: {
@@ -323,7 +349,7 @@ cmd({
             video: videoBuffer,
             mimetype: "video/mp4",
             fileName: `${safeTitle}.mp4`,
-            caption: `🎬 *${title}*\n🎞️ ${apiData.quality} MP4\n🔗 *Powered By ERFAN-MD*`
+            caption: `🎬 *${title}*\n🔗 *Powered By ERFAN-MD*`
         }, { quoted: mek });
 
         await conn.sendMessage(from, {
@@ -510,7 +536,7 @@ Please reply with:
                     if (!asDocument) {
                         await conn.sendMessage(from, {
                             video: { url: videoUrl },
-                            caption: `🎬 *${title}*\n🎞️ ${apiData.quality} MP4\n\n> Powered by ERFAN-MD`
+                            caption: `🎬 *${title}*\n\n> Powered by ERFAN-MD`
                         }, { quoted: received });
                     } else {
                         tempFile = path.join(os.tmpdir(), `video_${Date.now()}.mp4`);
@@ -519,7 +545,8 @@ Please reply with:
                             method: 'GET',
                             url: videoUrl,
                             responseType: 'stream',
-                            timeout: 120000
+                            timeout: 180000,
+                            headers: { "User-Agent": "Mozilla/5.0" }
                         });
 
                         const writer = fs.createWriteStream(tempFile);
@@ -535,7 +562,7 @@ Please reply with:
                             document: { url: tempFile },
                             mimetype: "video/mp4",
                             fileName: `${title}.mp4`,
-                            caption: `📄 *${title}*\n📹 Video Document (${apiData.quality})\n\n> Powered by ERFAN-MD`
+                            caption: `📄 *${title}*\n📹 Video Document\n\n> Powered by ERFAN-MD`
                         }, { quoted: received });
 
                         try {
@@ -655,10 +682,8 @@ _⚡ Downloading as document..._
             method: 'GET',
             url: downloadURL,
             responseType: 'stream',
-            timeout: 120000,
-            headers: {
-                "User-Agent": "Mozilla/5.0"
-            }
+            timeout: 180000,
+            headers: { "User-Agent": "Mozilla/5.0" }
         });
 
         const writer = fs.createWriteStream(tempFile);
@@ -674,7 +699,7 @@ _⚡ Downloading as document..._
             document: { url: tempFile },
             mimetype: "video/mp4",
             fileName: `${title.replace(/[\\/:*?"<>|]/g, "_").slice(0, 180)}.mp4`,
-            caption: `🎬 *${title}*\n🎞️ ${apiData.quality} MP4\n\n> Powered by ERFAN-MD`
+            caption: `🎬 *${title}*\n\n> Powered by ERFAN-MD`
         }, { quoted: mek });
 
         try {
@@ -769,7 +794,7 @@ cmd({
 
         await conn.sendMessage(from, {
             video: { url: videoUrl },
-            caption: `🧸 *${title}*\n🎞️ ${apiData.quality} MP4\n\n> Powered by ERFAN-MD`
+            caption: `🧸 *${title}*\n\n> Powered by ERFAN-MD`
         }, { quoted: mek });
 
         await conn.sendMessage(from, {
@@ -784,7 +809,7 @@ cmd({
         if (global.gc) global.gc();
 
         console.error("Error in .cartoon command:", e);
-        reply("❌ Error occurred, please try again later!");
+        reply(`❌ Cartoon download failed: ${e?.message || "Please try again later."}`);
 
         await conn.sendMessage(from, {
             react: { text: '❌', key: m.key }
@@ -855,10 +880,8 @@ _⚡ Downloading as document..._
             method: 'GET',
             url: downloadURL,
             responseType: 'stream',
-            timeout: 120000,
-            headers: {
-                "User-Agent": "Mozilla/5.0"
-            }
+            timeout: 180000,
+            headers: { "User-Agent": "Mozilla/5.0" }
         });
 
         const writer = fs.createWriteStream(tempFile);
@@ -874,7 +897,7 @@ _⚡ Downloading as document..._
             document: { url: tempFile },
             mimetype: "video/mp4",
             fileName: `${title.replace(/[\\/:*?"<>|]/g, "_").slice(0, 180)}.mp4`,
-            caption: `🍿 *${title}*\n🎞️ ${apiData.quality} MP4\n\n> Powered by ERFAN-MD`
+            caption: `🍿 *${title}*\n\n> Powered by ERFAN-MD`
         }, { quoted: mek });
 
         try {
@@ -895,7 +918,9 @@ _⚡ Downloading as document..._
 
         if (global.gc) global.gc();
 
-        await reply("❌ Error: " + (e?.message || e));
+        console.error("Error in .moviea command:", e);
+
+        await reply(`❌ Movie download failed: ${e?.message || "Please try again later."}`);
 
         await conn.sendMessage(from, {
             react: { text: '❌', key: mek.key }
