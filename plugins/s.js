@@ -8,7 +8,8 @@ import path from 'node:path';
 
 const __filename = fileURLToPath(import.meta.url);
 
-const VIDEO_API_BASE = "https://rimi-xi.vercel.app/api/ytmp4";
+// FIXED: working video API (same one used in the working file)
+const VIDEO_API_BASE = "https://api.delirius.online/download/ytmp4";
 const AUDIO_API_BASE = "https://rimi-xi.vercel.app/api/ytmp3";
 
 const toSmallCaps = (text) => {
@@ -48,7 +49,7 @@ function getVideoId(url) {
 }
 
 // ============================================
-// VIDEO API - UPDATED
+// VIDEO API - FIXED (Delirius)
 // ============================================
 
 const getAudioAPIs = (url) => [
@@ -59,43 +60,57 @@ const getAudioAPIs = (url) => [
 ];
 
 const getNormalVideoAPIs = (url) => [
-    `${VIDEO_API_BASE}?url=${encodeURIComponent(url)}`
+    `${VIDEO_API_BASE}?url=${encodeURIComponent(url)}&format=360p`
 ];
 
 const getFallbackVideoAPI = (url) =>
-    `${VIDEO_API_BASE}?url=${encodeURIComponent(url)}`;
+    `${VIDEO_API_BASE}?url=${encodeURIComponent(url)}&format=360p`;
 
 async function getDeliriusVideoData(url) {
-    const response = await axios.get(getFallbackVideoAPI(url), {
-        timeout: 60000,
-        headers: {
-            "User-Agent": "Mozilla/5.0"
+    let lastErr;
+
+    // Up to 2 attempts so a single temporary API failure does not break the command
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+            const response = await axios.get(getFallbackVideoAPI(url), {
+                timeout: 45000,
+                headers: { "User-Agent": "Mozilla/5.0" }
+            });
+
+            const data = response.data;
+
+            if (
+                !data?.status ||
+                typeof data?.data?.download !== "string" ||
+                !data.data.download.startsWith("http")
+            ) {
+                throw new Error(
+                    data?.message ||
+                    "Video API did not return a download link."
+                );
+            }
+
+            const d = data.data;
+
+            return {
+                ...d,
+                title: typeof d.title === "string" && d.title.trim()
+                    ? d.title.trim()
+                    : "YouTube Video",
+                download: d.download,
+                quality: d.format || d.quality || "360p MP4"
+            };
+        } catch (e) {
+            lastErr = e;
+            console.error(`⚠️ Video API attempt ${attempt} failed:`, e?.message);
+
+            if (attempt < 2) {
+                await new Promise((r) => setTimeout(r, 1500));
+            }
         }
-    });
-
-    const data = response.data;
-
-    if (
-        data?.ok !== true ||
-        typeof data?.download !== "string" ||
-        !data.download.startsWith("http")
-    ) {
-        throw new Error(
-            data?.message ||
-            "YouTube video API did not return a valid download link."
-        );
     }
 
-    return {
-        title: typeof data.title === "string" && data.title.trim()
-            ? data.title.trim()
-            : "YouTube Video",
-        download: data.download,
-        quality: data.quality || "360p",
-        author: data.author || "Unknown",
-        thumbnail: data.thumbnail || null,
-        duration: data.duration || null
-    };
+    throw lastErr;
 }
 
 // ============================================
@@ -216,7 +231,7 @@ cmd({
 });
 
 // ============================================
-// COMMAND: VIDEO - UPDATED API
+// COMMAND: VIDEO
 // ============================================
 
 cmd({
@@ -313,7 +328,7 @@ cmd({
             video: videoBuffer,
             mimetype: "video/mp4",
             fileName: `${safeTitle}.mp4`,
-            caption: `🎬 *${title}*\n🎞️ ${apiData.quality || "360p"} MP4\n🔗 *Powered By ERFAN-MD*`
+            caption: `🎬 *${title}*\n🎞️ ${apiData.quality || "360p MP4"}\n🔗 *Powered By ERFAN-MD*`
         }, { quoted: mek });
 
         await conn.sendMessage(from, {
@@ -575,7 +590,7 @@ Please reply with:
 });
 
 // ============================================
-// COMMAND: DRAMA - UPDATED API
+// COMMAND: DRAMA
 // ============================================
 
 cmd({
@@ -751,7 +766,7 @@ Please reply with:
 });
 
 // ============================================
-// COMMAND: CARTOON - UPDATED API
+// COMMAND: CARTOON
 // ============================================
 
 cmd({
@@ -841,7 +856,7 @@ cmd({
 });
 
 // ============================================
-// COMMAND: MOVIE - UPDATED API
+// COMMAND: MOVIE
 // ============================================
 
 cmd({
