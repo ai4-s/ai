@@ -92,10 +92,6 @@ async function getDeliriusVideoData(url) {
 // VIDEO COMMAND
 // ============================================
 
-// ============================================
-// VIDEO COMMAND - FIXED USING CARTOON METHOD
-// ============================================
-
 cmd({
     pattern: "video",
     alias: ["ytv", "ytmp4", "vd"],
@@ -112,37 +108,20 @@ cmd({
         }
 
         const { default: yts } = await import("yt-search");
-
         let vid;
         let url = text.trim();
 
-        // Direct YouTube URL
         if (/^https?:\/\//i.test(url)) {
             url = normalizeYouTubeUrl(url);
-
-            const id = url.match(/[?&]v=([a-zA-Z0-9_-]{11})/)?.[1];
-
-            if (!id) {
-                return reply("❌ Invalid YouTube URL!");
-            }
-
+            const id = url.match(/[?&]v=([a-zA-Z0-9_-]{11})/)[1];
             vid = await yts({ videoId: id });
-
         } else {
-            // Normal YouTube search - no cartoon keyword
             const search = await yts(url);
-
-            if (!search?.videos?.length) {
-                return reply("❌ No video found!");
-            }
-
-            vid = search.videos[0];
-            url = vid.url;
+            vid = search.videos?.[0];
+            if (vid) url = vid.url;
         }
 
-        if (!vid || !url) {
-            return reply("❌ No video found!");
-        }
+        if (!vid) return reply("❌ No video found!");
 
         await conn.sendMessage(from, {
             image: { url: vid.thumbnail },
@@ -152,21 +131,19 @@ cmd({
 📺 *Channel:* ${vid.author?.name || "Unknown"}
 ⏱️ *Duration:* ${vid.timestamp || "N/A"}
 
-⏳ Downloading video...
+⏳ Getting download link...
 > Powered by ERFAN-MD`
         }, { quoted: mek });
 
-        // Use the same API helper as the working cartoon command
         const data = await getDeliriusVideoData(url);
 
-        // Download MP4 into memory
+        // Download the actual MP4 instead of passing a remote URL
+        // directly to WhatsApp.
         const response = await axios.get(data.download, {
             responseType: "arraybuffer",
             timeout: 120000,
             maxContentLength: 500 * 1024 * 1024,
-            headers: {
-                "User-Agent": "Mozilla/5.0"
-            }
+            headers: { "User-Agent": "Mozilla/5.0" }
         });
 
         const buffer = Buffer.from(response.data);
@@ -179,19 +156,15 @@ cmd({
             throw new Error("Invalid or empty MP4 response");
         }
 
-        const safeTitle = (data.title || vid.title || "ERFAN-Video")
+        const safeTitle = data.title
             .replace(/[\\/:*?"<>|]/g, "_")
             .slice(0, 150);
 
-        // Send video using the same Buffer method as cartoon
         await conn.sendMessage(from, {
             video: buffer,
             mimetype: "video/mp4",
             fileName: `${safeTitle}.mp4`,
-            caption: `🎬 *${data.title || vid.title}*
-📹 ${data.quality || "MP4"}
-
-> Powered by ERFAN-MD`
+            caption: `🎬 *${data.title}*\n📹 ${data.quality}\n\n> ERFAN-MD`
         }, { quoted: mek });
 
         await conn.sendMessage(from, {
@@ -210,7 +183,9 @@ cmd({
         });
 
         return reply(
-            `❌ Video download failed: ${error.message || "Please try again later."}`
+            error.response?.status === 502
+                ? "❌ API/CDN returned 502 after retries. Check server logs and try again."
+                : `❌ Video download failed: ${error.message}`
         );
     }
 });
@@ -343,127 +318,31 @@ Reply to this message:
                     text: `❌ Drama download failed: ${error.message}`
                 }, { quoted: received });
 
-// ============================================
-// DRAMA COMMAND - DIRECT DOCUMENT DOWNLOAD
-// ============================================
-
-cmd({
-    pattern: "drama",
-    alias: ["film", "series"],
-    desc: "Download YouTube drama directly as document",
-    category: "download",
-    react: "🎬",
-    filename: __filename
-}, async (conn, mek, m, { from, text, reply }) => {
-    try {
-        if (!text) {
-            return reply(
-                "🎬 Provide a drama name or YouTube link.\nExample: .drama Muskan 5"
-            );
-        }
-
-        const { default: yts } = await import("yt-search");
-
-        let vid;
-        let url = text.trim();
-
-        // Direct YouTube URL
-        if (/^https?:\/\//i.test(url)) {
-            url = normalizeYouTubeUrl(url);
-
-            const id = url.match(/[?&]v=([a-zA-Z0-9_-]{11})/)?.[1];
-
-            if (!id) {
-                return reply("❌ Invalid YouTube URL!");
+            } finally {
+                if (tempFile && fs.existsSync(tempFile)) {
+                    try {
+                        fs.unlinkSync(tempFile);
+                    } catch {}
+                }
             }
+        };
 
-            vid = await yts({ videoId: id });
+        conn.ev.on("messages.upsert", listener);
 
-        } else {
-            // Search drama normally
-            const search = await yts(url);
-
-            if (!search?.videos?.length) {
-                return reply("❌ No drama found!");
+        setTimeout(() => {
+            if (listener) {
+                conn.ev.off("messages.upsert", listener);
+                listener = null;
             }
-
-            vid = search.videos[0];
-            url = vid.url;
-        }
-
-        if (!vid || !url) {
-            return reply("❌ No drama found!");
-        }
-
-        await conn.sendMessage(from, {
-            image: { url: vid.thumbnail },
-            caption: `🎬 *DRAMA DOWNLOADER*
-
-📌 *Title:* ${vid.title}
-📺 *Channel:* ${vid.author?.name || "Unknown"}
-⏱️ *Duration:* ${vid.timestamp || "N/A"}
-
-⏳ Downloading as document...
-> Powered by ERFAN-MD`
-        }, { quoted: mek });
-
-        // Use the same API helper as cartoon
-        const data = await getDeliriusVideoData(url);
-
-        // Download MP4 into memory
-        const response = await axios.get(data.download, {
-            responseType: "arraybuffer",
-            timeout: 120000,
-            maxContentLength: 500 * 1024 * 1024,
-            headers: {
-                "User-Agent": "Mozilla/5.0"
-            }
-        });
-
-        const buffer = Buffer.from(response.data);
-        const contentType = response.headers?.["content-type"] || "";
-
-        if (
-            buffer.length < 10000 ||
-            /text\/html|application\/json/i.test(contentType)
-        ) {
-            throw new Error("Invalid or empty MP4 response");
-        }
-
-        const safeTitle = (data.title || vid.title || "ERFAN-Drama")
-            .replace(/[\\/:*?"<>|]/g, "_")
-            .slice(0, 150);
-
-        // Send directly as MP4 document
-        await conn.sendMessage(from, {
-            document: buffer,
-            mimetype: "video/mp4",
-            fileName: `${safeTitle}.mp4`,
-            caption: `🎬 *${data.title || vid.title}*
-
-> Powered by ERFAN-MD`
-        }, { quoted: mek });
-
-        await conn.sendMessage(from, {
-            react: { text: "✅", key: m.key }
-        });
+        }, 60000);
 
     } catch (error) {
-        console.error(
-            "[DRAMA ERROR]",
-            error.response?.status,
-            error.response?.data || error.message
-        );
-
-        await conn.sendMessage(from, {
-            react: { text: "❌", key: m.key }
-        });
-
-        return reply(
-            `❌ Drama download failed: ${error.message || "Please try again later."}`
-        );
+        if (listener) conn.ev.off("messages.upsert", listener);
+        console.error("[DRAMA SETUP ERROR]", error);
+        return reply(`❌ Drama error: ${error.message}`);
     }
 });
+
 // ============================================
 // CARTOON COMMAND
 // ============================================
@@ -492,7 +371,7 @@ cmd({
             const id = url.match(/[?&]v=([a-zA-Z0-9_-]{11})/)[1];
             vid = await yts({ videoId: id });
         } else {
-            const search = await yts(`${url} cartoon`);
+            const search = await yts(`${url}`);
             vid = search.videos?.[0];
             if (vid) url = vid.url;
         }
