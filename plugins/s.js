@@ -11,7 +11,7 @@ const __filename = fileURLToPath(import.meta.url);
 const AUDIO_API_BASE = "https://rimi-xi.vercel.app/api/ytmp3";
 const VIDEO_API_BASE = "https://yts-7ih0.onrender.com/ytvideo";
 const VIDEO_API_KEY = "ERFANYT_SECRET";
-const VIDEO_DEFAULT_QUALITY = "auto";
+const VIDEO_DEFAULT_QUALITY = "360p";
 
 const toSmallCaps = (text) => {
     const map = {
@@ -68,70 +68,44 @@ const getAudioAPIs = (url) => [
 ];
 
 // ============================================
-// NEW VIDEO API (quality auto + 400-safe fallback)
+// VIDEO API (quality fixed at 360p)
 // ============================================
 
 async function getErfanVideoData(url, quality = VIDEO_DEFAULT_QUALITY) {
     const cleanUrl = cleanYouTubeUrl(url);
+    const apiUrl = `${VIDEO_API_BASE}?url=${encodeURIComponent(cleanUrl)}&key=${encodeURIComponent(VIDEO_API_KEY)}&quality=${encodeURIComponent(quality)}`;
 
-    const buildApiUrl = (q) => {
-        let apiUrl = `${VIDEO_API_BASE}?url=${encodeURIComponent(cleanUrl)}&key=${encodeURIComponent(VIDEO_API_KEY)}`;
-        if (q) apiUrl += `&quality=${encodeURIComponent(q)}`;
-        return apiUrl;
-    };
-
-    // Try "auto" first. If API rejects it (400) try without quality, then 720p.
-    const attempts = quality === VIDEO_DEFAULT_QUALITY
-        ? ["auto", null, "720p", "360p"]
-        : [quality];
-
-    let lastError = null;
-
-    for (const q of attempts) {
-        try {
-            const response = await axios.get(buildApiUrl(q), {
-                timeout: 60000,
-                headers: { "User-Agent": "Mozilla/5.0" },
-                validateStatus: (status) => status < 500
-            });
-
-            if (response.status >= 400) {
-                lastError = new Error(`Request failed with status code ${response.status}`);
-                continue;
-            }
-
-            const json = response.data;
-
-            if (
-                json?.status !== true ||
-                !json?.data ||
-                typeof json.data.download !== "string" ||
-                !json.data.download.startsWith("http")
-            ) {
-                lastError = new Error(
-                    json?.message ||
-                    "YouTube video API did not return a valid download link."
-                );
-                continue;
-            }
-
-            return {
-                title: typeof json.data.title === "string" && json.data.title.trim()
-                    ? json.data.title.trim()
-                    : "YouTube Video",
-                author: json.data.author || "Unknown",
-                thumbnail: json.data.image || null,
-                format: json.data.format || "mp4",
-                quality: json.data.quality || q || VIDEO_DEFAULT_QUALITY,
-                download: json.data.download
-            };
-        } catch (e) {
-            lastError = e;
-            continue;
+    const response = await axios.get(apiUrl, {
+        timeout: 60000,
+        headers: {
+            "User-Agent": "Mozilla/5.0"
         }
+    });
+
+    const json = response.data;
+
+    if (
+        json?.status !== true ||
+        !json?.data ||
+        typeof json.data.download !== "string" ||
+        !json.data.download.startsWith("http")
+    ) {
+        throw new Error(
+            json?.message ||
+            "YouTube video API did not return a valid download link."
+        );
     }
 
-    throw lastError || new Error("Video API request failed.");
+    return {
+        title: typeof json.data.title === "string" && json.data.title.trim()
+            ? json.data.title.trim()
+            : "YouTube Video",
+        author: json.data.author || "Unknown",
+        thumbnail: json.data.image || null,
+        format: json.data.format || "mp4",
+        quality: quality,
+        download: json.data.download
+    };
 }
 
 // ============================================
@@ -349,7 +323,7 @@ cmd({
             video: videoBuffer,
             mimetype: "video/mp4",
             fileName: `${safeTitle}.mp4`,
-            caption: `🎬 *${title}*\n🎞️ ${apiData.quality || VIDEO_DEFAULT_QUALITY} MP4\n🔗 *Powered By ERFAN-MD*`
+            caption: `🎬 *${title}*\n🎞️ ${apiData.quality} MP4\n🔗 *Powered By ERFAN-MD*`
         }, { quoted: mek });
 
         await conn.sendMessage(from, {
@@ -536,7 +510,7 @@ Please reply with:
                     if (!asDocument) {
                         await conn.sendMessage(from, {
                             video: { url: videoUrl },
-                            caption: `🎬 *${title}*\n\n> Powered by ERFAN-MD`
+                            caption: `🎬 *${title}*\n🎞️ ${apiData.quality} MP4\n\n> Powered by ERFAN-MD`
                         }, { quoted: received });
                     } else {
                         tempFile = path.join(os.tmpdir(), `video_${Date.now()}.mp4`);
@@ -561,7 +535,7 @@ Please reply with:
                             document: { url: tempFile },
                             mimetype: "video/mp4",
                             fileName: `${title}.mp4`,
-                            caption: `📄 *${title}*\n📹 Video Document\n\n> Powered by ERFAN-MD`
+                            caption: `📄 *${title}*\n📹 Video Document (${apiData.quality})\n\n> Powered by ERFAN-MD`
                         }, { quoted: received });
 
                         try {
@@ -700,7 +674,7 @@ _⚡ Downloading as document..._
             document: { url: tempFile },
             mimetype: "video/mp4",
             fileName: `${title.replace(/[\\/:*?"<>|]/g, "_").slice(0, 180)}.mp4`,
-            caption: `🎬 *${title}*\n\n> Powered by ERFAN-MD`
+            caption: `🎬 *${title}*\n🎞️ ${apiData.quality} MP4\n\n> Powered by ERFAN-MD`
         }, { quoted: mek });
 
         try {
@@ -795,7 +769,7 @@ cmd({
 
         await conn.sendMessage(from, {
             video: { url: videoUrl },
-            caption: `🧸 *${title}*\n\n> Powered by ERFAN-MD`
+            caption: `🧸 *${title}*\n🎞️ ${apiData.quality} MP4\n\n> Powered by ERFAN-MD`
         }, { quoted: mek });
 
         await conn.sendMessage(from, {
@@ -900,7 +874,7 @@ _⚡ Downloading as document..._
             document: { url: tempFile },
             mimetype: "video/mp4",
             fileName: `${title.replace(/[\\/:*?"<>|]/g, "_").slice(0, 180)}.mp4`,
-            caption: `🍿 *${title}*\n\n> Powered by ERFAN-MD`
+            caption: `🍿 *${title}*\n🎞️ ${apiData.quality} MP4\n\n> Powered by ERFAN-MD`
         }, { quoted: mek });
 
         try {
