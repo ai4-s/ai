@@ -218,8 +218,7 @@ cmd({
 
 
 // ============================================
-// COMMAND: DRAMA
-// Always sent as document (robust download like movie)
+// COMMAND: DRAMA  (restored original + fixes)
 // ============================================
 
 cmd({
@@ -285,30 +284,43 @@ _⚡ Downloading as document..._
             react: { text: '⬇️', key: m.key }
         });
 
-        // ✅ Robust download (same as movie command)
-        const apiData = await getDeliriusVideoData(url);
-        const downloadURL = apiData.download;
+        // ✅ 502 retry wrapper
+        let apiData = null;
+        let lastErr = null;
+        for (let i = 0; i < 3; i++) {
+            try {
+                apiData = await getVideoDataSafe(url);
+                lastErr = null;
+                break;
+            } catch (e) {
+                lastErr = e;
+                const code = e?.response?.status;
+                if (code !== 502 && code !== 503 && code !== 504) break;
+                if (i < 2) await new Promise(r => setTimeout(r, 2000));
+            }
+        }
+        if (!apiData) throw lastErr || new Error("API failed after retries");
+
         const title = apiData.title || vid.title;
 
-        tempFile = path.join(os.tmpdir(), `drama_${Date.now()}.mp4`);
+        // ✅ 502 retry on download
+        let dl = null;
+        lastErr = null;
+        for (let i = 0; i < 3; i++) {
+            try {
+                dl = await downloadToTemp(apiData.download, "drama");
+                lastErr = null;
+                break;
+            } catch (e) {
+                lastErr = e;
+                const code = e?.response?.status;
+                if (code !== 502 && code !== 503 && code !== 504) break;
+                if (i < 2) await new Promise(r => setTimeout(r, 2000));
+            }
+        }
+        if (!dl) throw lastErr || new Error("Download failed after retries");
 
-        const fileRes = await axios({
-            method: 'GET',
-            url: downloadURL,
-            responseType: 'stream',
-            timeout: 300000,              // 5 minutes
-            maxContentLength: Infinity,
-            maxBodyLength: Infinity
-        });
-
-        const writer = fs.createWriteStream(tempFile);
-        fileRes.data.pipe(writer);
-
-        await new Promise((resolve, reject) => {
-            writer.on('finish', resolve);
-            writer.on('error', reject);
-            fileRes.data.on('error', reject);
-        });
+        tempFile = dl.tempFile;
 
         await conn.sendMessage(from, {
             document: { url: tempFile },
@@ -323,12 +335,19 @@ _⚡ Downloading as document..._
 
     } catch (e) {
         console.error("⚠️ Drama download failed:", e?.response?.data || e?.message || e);
+
         try {
-            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+            await conn.sendMessage(from, {
+                react: { text: '❌', key: m.key }
+            });
         } catch {}
+
         reply(`❌ Video download failed! ${e?.message || "Try again later."}`);
     } finally {
-        removeFile(tempFile);
+        // ✅ removeFile کی جگہ inline delete
+        try {
+            if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+        } catch {}
         if (global.gc) global.gc();
     }
 });
@@ -633,68 +652,54 @@ cmd({
             react: { text: "⬇️", key: m.key }
         });
 
-        // ✅ پہلے چیک کریں: کیا ویڈیو 1 گھنٹے سے لمبی ہے؟
-        const isLong = (Number(vid.seconds) || 0) > 3600;
+        // ✅ 502 retry wrapper
+        let apiData = null;
+        let lastErr = null;
+        for (let i = 0; i < 3; i++) {
+            try {
+                apiData = await getVideoDataSafe(url);
+                lastErr = null;
+                break;
+            } catch (e) {
+                lastErr = e;
+                const code = e?.response?.status;
+                if (code !== 502 && code !== 503 && code !== 504) break;
+                if (i < 2) await new Promise(r => setTimeout(r, 2000));
+            }
+        }
+        if (!apiData) throw lastErr || new Error("API failed after retries");
 
-        // ✅ Robust download (same as movie command)
-        const apiData = await getDeliriusVideoData(url);
-        const downloadURL = apiData.download;
         const title = apiData.title || vid.title;
 
-        tempFile = path.join(os.tmpdir(), `video_${Date.now()}.mp4`);
+        // ✅ 502 retry on download
+        let dl = null;
+        lastErr = null;
+        for (let i = 0; i < 3; i++) {
+            try {
+                dl = await downloadToTemp(apiData.download, "video");
+                lastErr = null;
+                break;
+            } catch (e) {
+                lastErr = e;
+                const code = e?.response?.status;
+                if (code !== 502 && code !== 503 && code !== 504) break;
+                if (i < 2) await new Promise(r => setTimeout(r, 2000));
+            }
+        }
+        if (!dl) throw lastErr || new Error("Download failed after retries");
 
-        const fileRes = await axios({
-            method: 'GET',
-            url: downloadURL,
-            responseType: 'stream',
-            timeout: 300000,              // 5 minutes
-            maxContentLength: Infinity,
-            maxBodyLength: Infinity
-        });
-
-        const writer = fs.createWriteStream(tempFile);
-        fileRes.data.pipe(writer);
-
-        await new Promise((resolve, reject) => {
-            writer.on('finish', resolve);
-            writer.on('error', reject);
-            fileRes.data.on('error', reject);
-        });
+        tempFile = dl.tempFile;
 
         const fileName = `${safeFileName(title)}.mp4`;
         const caption = `🎬 *${title}*\n🎞️ ${apiData.quality || "360p MP4"}\n🔗 *Powered By ERFAN-MD*`;
 
-        if (isLong) {
-            // ✅ لمبی ویڈیو: سیدھا document — کوئی اضافی میسج نہیں
-            await conn.sendMessage(from, {
-                document: { url: tempFile },
-                mimetype: "video/mp4",
-                fileName,
-                caption
-            }, { quoted: mek });
-        } else {
-            // ✅ چھوٹی ویڈیو: پہلے video کوشش، ناکام ہونے پر خاموشی سے document
-            let sent = false;
-            try {
-                await conn.sendMessage(from, {
-                    video: { url: tempFile },
-                    mimetype: "video/mp4",
-                    fileName,
-                    caption
-                }, { quoted: mek });
-                sent = true;
-            } catch (e) {
-                console.error("[VIDEO] Video send failed, sending as document:", e?.message);
-            }
-            if (!sent) {
-                await conn.sendMessage(from, {
-                    document: { url: tempFile },
-                    mimetype: "video/mp4",
-                    fileName,
-                    caption
-                }, { quoted: mek });
-            }
-        }
+        // ✅ بس سیدھا ویڈیو — کوئی document fallback نہیں
+        await conn.sendMessage(from, {
+            video: { url: tempFile },
+            mimetype: "video/mp4",
+            fileName,
+            caption
+        }, { quoted: mek });
 
         await conn.sendMessage(from, {
             react: { text: "✅", key: m.key }
@@ -705,20 +710,26 @@ cmd({
             "[VIDEO] Error:",
             error?.response?.data || error?.message || error
         );
+
         try {
-            await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
+            await conn.sendMessage(from, {
+                react: { text: "❌", key: m.key }
+            });
         } catch {}
+
         return reply(
             error?.code === "ECONNABORTED"
                 ? "❌ Video download timed out. Please try again."
                 : `❌ Video download failed: ${error?.message || "Please try again later."}`
         );
     } finally {
-        removeFile(tempFile);
+        // ✅ removeFile کی جگہ inline delete
+        try {
+            if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+        } catch {}
         if (global.gc) global.gc();
     }
 });
-
 // ============================================
 // COMMAND: CARTOON - UPDATED API
 // ============================================
