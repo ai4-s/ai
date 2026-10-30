@@ -99,65 +99,141 @@ async function getDeliriusVideoData(url) {
 }
 
 // ============================================
-// SHARED SAFE DOWNLOADER (fixes 502 errors)
+// IN-MEMORY DOWNLOADER (bot downloads, then sends buffer)
 // ============================================
-// Downloads the MP4 to a temp file using a plain request
-// (same method the working .cartoon / .moviea commands use).
-// If the download link gives 502/503/504 or any error, it asks
-// the API for a FRESH link and tries again (up to 3 attempts).
+// Step 1: ask the API for the link (retries on 502 / cold start)
+// Step 2: bot downloads the file into its OWN MEMORY (Buffer)
+//         using Node's native fetch, trying 3 header styles
+// Step 3: if the link gives an error, ask the API for a FRESH link
+// Every error says which step failed: [API] or [FILE]
+
+const BROWSER_UA =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const safeFileName = (name) =>
     String(name || "video").replace(/[\\/:*?"<>|]/g, "_").slice(0, 180);
 
-async function downloadVideoToTemp(url, prefix = "video") {
-    const MAX_TRIES = 3;
-    let lastError = null;
-    let apiData = null;
+async function getVideoDataWithRetry(url, tries = 3) {
+    let last = null;
 
-    for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
-        const tempFile = path.join(os.tmpdir(), `${prefix}_${Date.now()}_${attempt}.mp4`);
-
+    for (let i = 1; i <= tries; i++) {
         try {
-            apiData = await getDeliriusVideoData(url);
-
-            const fileRes = await axios({
-                method: "GET",
-                url: apiData.download,
-                responseType: "stream",
-                timeout: 120000,
-                maxRedirects: 5
-            });
-
-            const writer = fs.createWriteStream(tempFile);
-            fileRes.data.pipe(writer);
-
-            await new Promise((resolve, reject) => {
-                writer.on("finish", resolve);
-                writer.on("error", reject);
-                fileRes.data.on("error", reject);
-            });
-
-            const size = fs.statSync(tempFile).size;
-            if (size < 10000) {
-                throw new Error("Downloaded file is empty or invalid.");
-            }
-
-            return { tempFile, apiData };
+            return await getDeliriusVideoData(url);
         } catch (err) {
-            lastError = err;
-            console.error(`[DOWNLOAD] Attempt ${attempt}/${MAX_TRIES} failed:`, err?.message);
-
-            try {
-                if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
-            } catch {}
-
-            if (attempt < MAX_TRIES) {
-                await new Promise((r) => setTimeout(r, 3000 * attempt));
-            }
+            last = err;
+            console.error(
+                `[API] attempt ${i}/${tries} failed:`,
+                err?.response?.status || "",
+                err?.response?.data || err?.message
+            );
+            if (i < tries) await sleep(2500 * i);
         }
     }
 
-    throw lastError || new Error("Download failed.");
+    const status = last?.response?.status;
+    const e = new Error(
+        `[API] ${status ? `HTTP ${status} - ` : ""}${last?.message || "API failed"}`
+    );
+    e.stage = "api";
+    throw e;
+}
+
+async function fetchFileToBuffer(downloadUrl) {
+    let origin;
+    try {
+        origin = new URL(downloadUrl).origin + "/";
+    } catch {}
+
+    const profiles = [
+        { name: "plain", headers: {} },
+        { name: "browser", headers: { "User-Agent": BROWSER_UA, "Accept": "*/*" } },
+        {
+            name: "browser+referer",
+            headers: {
+                "User-Agent": BROWSER_UA,
+                "Accept": "*/*",
+                ...(origin ? { Referer: origin } : {})
+            }
+        }
+    ];
+
+    let lastErr = null;
+
+    for (const p of profiles) {
+        try {
+            const res = await fetch(downloadUrl, {
+                headers: p.headers,
+                redirect: "follow",
+                signal: AbortSignal.timeout(240000)
+            });
+
+            if (!res.ok) {
+                let snippet = "";
+                try { snippet = (await res.text()).slice(0, 200); } catch {}
+                const err = new Error(`HTTP ${res.status}`);
+                err.snippet = snippet;
+                throw err;
+            }
+
+            const type = res.headers.get("content-type") || "";
+            if (type.includes("text/html") || type.includes("application/json")) {
+                throw new Error(`link returned ${type} instead of a video`);
+            }
+
+            const len = Number(res.headers.get("content-length") || 0);
+            if (len > MAX_VIDEO_BYTES) {
+                const err = new Error("video is too large for bot memory (over 500 MB)");
+                err.fatal = true;
+                throw err;
+            }
+
+            const buffer = Buffer.from(await res.arrayBuffer());
+
+            if (buffer.length < 10000) {
+                throw new Error("downloaded file is empty or invalid");
+            }
+
+            return buffer;
+        } catch (err) {
+            lastErr = err;
+            console.error(
+                `[FILE] "${p.name}" failed:`,
+                err?.message,
+                err?.snippet || ""
+            );
+            if (err?.fatal) break;
+        }
+    }
+
+    const e = new Error(`[FILE] ${lastErr?.message || "download failed"}`);
+    e.stage = "file";
+    e.fatal = !!lastErr?.fatal;
+    throw e;
+}
+
+async function downloadVideoToMemory(url) {
+    let lastErr = null;
+    let lastApiData = null;
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        const apiData = await getVideoDataWithRetry(url, attempt === 1 ? 3 : 2);
+        lastApiData = apiData;
+
+        try {
+            const buffer = await fetchFileToBuffer(apiData.download);
+            return { buffer, apiData };
+        } catch (err) {
+            lastErr = err;
+            if (err.fatal) break;
+            console.error(`[DOWNLOAD] round ${attempt}/3 failed, requesting a fresh link...`);
+            if (attempt < 3) await sleep(3000 * attempt);
+        }
+    }
+
+    lastErr.apiData = lastApiData;
+    throw lastErr;
 }
 
 
@@ -279,7 +355,7 @@ cmd({
 });
 
 // ============================================
-// COMMAND: VIDEO - FIXED (no Referer header, temp file, retry)
+// COMMAND: VIDEO - FIXED (downloads into bot memory)
 // ============================================
 
 cmd({
@@ -290,8 +366,6 @@ cmd({
     react: "📹",
     filename: __filename
 }, async (conn, mek, m, { from, text, reply }) => {
-    let tempFile = null;
-
     try {
         if (!text) {
             return reply(
@@ -340,32 +414,36 @@ cmd({
             react: { text: "⬇️", key: m.key }
         });
 
-        const result = await downloadVideoToTemp(url, "video");
-        tempFile = result.tempFile;
-
-        const title = result.apiData.title || vid.title;
-
-        await conn.sendMessage(from, {
-            video: { url: tempFile },
-            mimetype: "video/mp4",
-            fileName: `${safeFileName(title)}.mp4`,
-            caption: `🎬 *${title}*\n🎞️ ${result.apiData.quality || "360p"} MP4\n🔗 *Powered By ERFAN-MD*`
-        }, { quoted: mek });
-
         try {
-            if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
-        } catch {}
-        tempFile = null;
+            // Main method: bot downloads into its memory, then sends the buffer
+            const { buffer, apiData } = await downloadVideoToMemory(url);
+            const title = apiData.title || vid.title;
+
+            await conn.sendMessage(from, {
+                video: buffer,
+                mimetype: "video/mp4",
+                fileName: `${safeFileName(title)}.mp4`,
+                caption: `🎬 *${title}*\n🎞️ ${apiData.quality || "360p"} MP4\n🔗 *Powered By ERFAN-MD*`
+            }, { quoted: mek });
+        } catch (err) {
+            // Last resort only: let WhatsApp library fetch the link itself
+            if (err?.stage === "file" && !err?.fatal && err?.apiData?.download) {
+                console.error("[VIDEO] memory download failed, trying direct URL send...");
+                await conn.sendMessage(from, {
+                    video: { url: err.apiData.download },
+                    mimetype: "video/mp4",
+                    caption: `🎬 *${err.apiData.title || vid.title}*\n🔗 *Powered By ERFAN-MD*`
+                }, { quoted: mek });
+            } else {
+                throw err;
+            }
+        }
 
         await conn.sendMessage(from, {
             react: { text: "✅", key: m.key }
         });
 
     } catch (error) {
-        try {
-            if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
-        } catch {}
-
         console.error(
             "[VIDEO] Error:",
             error?.response?.data || error?.message || error
@@ -375,11 +453,7 @@ cmd({
             react: { text: "❌", key: m.key }
         });
 
-        return reply(
-            error?.code === "ECONNABORTED"
-                ? "❌ Video download timed out. Please try again."
-                : `❌ Video download failed: ${error?.message || "Please try again later."}`
-        );
+        return reply(`❌ Video download failed: ${error?.message || "Please try again later."}`);
     }
 });
 
@@ -620,7 +694,7 @@ Please reply with:
 });
 
 // ============================================
-// COMMAND: DRAMA - FIXED (direct document, no menu)
+// COMMAND: DRAMA - FIXED (direct document, bot memory)
 // ============================================
 
 cmd({
@@ -631,8 +705,6 @@ cmd({
     react: "🎬",
     filename: __filename
 }, async (conn, mek, m, { from, text, reply }) => {
-    let tempFile = null;
-
     try {
         if (!text) {
             return reply(
@@ -684,22 +756,32 @@ _⚡ Downloading as document..._
             react: { text: '⬇️', key: m.key }
         });
 
-        const result = await downloadVideoToTemp(url, "drama");
-        tempFile = result.tempFile;
-
-        const title = result.apiData.title || vid.title;
-
-        await conn.sendMessage(from, {
-            document: { url: tempFile },
-            mimetype: "video/mp4",
-            fileName: `${safeFileName(title)}.mp4`,
-            caption: `🎬 *${title}*\n\n> Powered by ERFAN-MD`
-        }, { quoted: mek });
-
         try {
-            if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
-        } catch {}
-        tempFile = null;
+            // Main method: bot downloads into its memory, then sends buffer as document
+            const { buffer, apiData } = await downloadVideoToMemory(url);
+            const title = apiData.title || vid.title;
+
+            await conn.sendMessage(from, {
+                document: buffer,
+                mimetype: "video/mp4",
+                fileName: `${safeFileName(title)}.mp4`,
+                caption: `🎬 *${title}*\n\n> Powered by ERFAN-MD`
+            }, { quoted: mek });
+        } catch (err) {
+            // Last resort only: let WhatsApp library fetch the link itself
+            if (err?.stage === "file" && !err?.fatal && err?.apiData?.download) {
+                console.error("[DRAMA] memory download failed, trying direct URL send...");
+                const t = err.apiData.title || vid.title;
+                await conn.sendMessage(from, {
+                    document: { url: err.apiData.download },
+                    mimetype: "video/mp4",
+                    fileName: `${safeFileName(t)}.mp4`,
+                    caption: `🎬 *${t}*\n\n> Powered by ERFAN-MD`
+                }, { quoted: mek });
+            } else {
+                throw err;
+            }
+        }
 
         if (global.gc) global.gc();
 
@@ -708,10 +790,6 @@ _⚡ Downloading as document..._
         });
 
     } catch (e) {
-        try {
-            if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
-        } catch {}
-
         if (global.gc) global.gc();
 
         console.error("❌ Drama download failed:", e?.response?.data || e?.message || e);
