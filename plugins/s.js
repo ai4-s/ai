@@ -49,6 +49,13 @@ function getVideoId(url) {
     return null;
 }
 
+// Build a clean YouTube URL (removes playlist / tracking params that cause 400)
+function cleanYouTubeUrl(url) {
+    const id = getVideoId(url);
+    if (id) return `https://www.youtube.com/watch?v=${id}`;
+    return url;
+}
+
 // ============================================
 // AUDIO API
 // ============================================
@@ -61,43 +68,70 @@ const getAudioAPIs = (url) => [
 ];
 
 // ============================================
-// NEW VIDEO API (quality auto)
+// NEW VIDEO API (quality auto + 400-safe fallback)
 // ============================================
 
 async function getErfanVideoData(url, quality = VIDEO_DEFAULT_QUALITY) {
-    const apiUrl = `${VIDEO_API_BASE}?url=${encodeURIComponent(url)}&key=${encodeURIComponent(VIDEO_API_KEY)}&quality=${encodeURIComponent(quality)}`;
+    const cleanUrl = cleanYouTubeUrl(url);
 
-    const response = await axios.get(apiUrl, {
-        timeout: 60000,
-        headers: {
-            "User-Agent": "Mozilla/5.0"
+    const buildApiUrl = (q) => {
+        let apiUrl = `${VIDEO_API_BASE}?url=${encodeURIComponent(cleanUrl)}&key=${encodeURIComponent(VIDEO_API_KEY)}`;
+        if (q) apiUrl += `&quality=${encodeURIComponent(q)}`;
+        return apiUrl;
+    };
+
+    // Try "auto" first. If API rejects it (400) try without quality, then 720p.
+    const attempts = quality === VIDEO_DEFAULT_QUALITY
+        ? ["auto", null, "720p", "360p"]
+        : [quality];
+
+    let lastError = null;
+
+    for (const q of attempts) {
+        try {
+            const response = await axios.get(buildApiUrl(q), {
+                timeout: 60000,
+                headers: { "User-Agent": "Mozilla/5.0" },
+                validateStatus: (status) => status < 500
+            });
+
+            if (response.status >= 400) {
+                lastError = new Error(`Request failed with status code ${response.status}`);
+                continue;
+            }
+
+            const json = response.data;
+
+            if (
+                json?.status !== true ||
+                !json?.data ||
+                typeof json.data.download !== "string" ||
+                !json.data.download.startsWith("http")
+            ) {
+                lastError = new Error(
+                    json?.message ||
+                    "YouTube video API did not return a valid download link."
+                );
+                continue;
+            }
+
+            return {
+                title: typeof json.data.title === "string" && json.data.title.trim()
+                    ? json.data.title.trim()
+                    : "YouTube Video",
+                author: json.data.author || "Unknown",
+                thumbnail: json.data.image || null,
+                format: json.data.format || "mp4",
+                quality: json.data.quality || q || VIDEO_DEFAULT_QUALITY,
+                download: json.data.download
+            };
+        } catch (e) {
+            lastError = e;
+            continue;
         }
-    });
-
-    const json = response.data;
-
-    if (
-        json?.status !== true ||
-        !json?.data ||
-        typeof json.data.download !== "string" ||
-        !json.data.download.startsWith("http")
-    ) {
-        throw new Error(
-            json?.message ||
-            "YouTube video API did not return a valid download link."
-        );
     }
 
-    return {
-        title: typeof json.data.title === "string" && json.data.title.trim()
-            ? json.data.title.trim()
-            : "YouTube Video",
-        author: json.data.author || "Unknown",
-        thumbnail: json.data.image || null,
-        format: json.data.format || "mp4",
-        quality: json.data.quality || quality,
-        download: json.data.download
-    };
+    throw lastError || new Error("Video API request failed.");
 }
 
 // ============================================
