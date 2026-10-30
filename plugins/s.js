@@ -187,10 +187,6 @@ cmd({
     }
 });
 
-// ============================================
-// COMMAND: VIDEO
-// ============================================
-
 cmd({
     pattern: "video",
     alias: ["ytv", "ytmp4", "vd"],
@@ -199,6 +195,8 @@ cmd({
     react: "📹",
     filename: __filename
 }, async (conn, mek, m, { from, text, reply }) => {
+    let tempFile = null;
+
     try {
         if (!text) {
             return reply("🎥 Please provide a video name or YouTube link!\n\nExample: `.video Alone Marshmello`");
@@ -223,7 +221,6 @@ cmd({
 
         if (!vid) return reply("❌ No video results found!");
 
-        // Send thumbnail and metadata immediately, before calling the download API.
         const detailsCaption = `╭─────────────🎬
 │ 🎥 *VIDEO DOWNLOADER*
 │─────────────────────
@@ -244,42 +241,31 @@ cmd({
             react: { text: "⬇️", key: m.key }
         });
 
-        // Request the MP4 link only after the details message has been sent.
-        const apiData = await getDeliriusVideoData(url);
+        const apiData = await getLongVideoData(url);
         const title = apiData.title || vid.title;
-        const videoDownloadUrl = apiData.download;
 
-        const videoRes = await axios.get(videoDownloadUrl, {
-            responseType: "arraybuffer",
-            timeout: 120000,
-            maxContentLength: 500 * 1024 * 1024,
-            maxBodyLength: 500 * 1024 * 1024,
-            headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Referer": "https://www.youtube.com/",
-                "Accept": "*/*"
-            }
-        });
-
-        const videoBuffer = Buffer.from(videoRes.data);
-        const contentType = videoRes.headers?.["content-type"] || "";
-
-        if (
-            videoBuffer.length < 10000 ||
-            contentType.includes("text/html") ||
-            contentType.includes("application/json")
-        ) {
-            throw new Error("The API returned an invalid or empty video file.");
-        }
+        const dl = await downloadToTempFile(apiData.download, "video");
+        tempFile = dl.tempFile;
 
         const safeTitle = title.replace(/[\\/:*?"<>|]/g, "_").slice(0, 180);
+        const caption = `🎬 *${title}*\n🎞️ ${apiData.format || "MP4"}\n🔗 *Powered By ERFAN-MD*`;
 
-        await conn.sendMessage(from, {
-            video: videoBuffer,
-            mimetype: "video/mp4",
-            fileName: `${safeTitle}.mp4`,
-            caption: `🎬 *${title}*\n🎞️ ${apiData.format || "360p MP4"}\n🔗 *Powered By ERFAN-MD*`
-        }, { quoted: mek });
+        if (dl.size > VIDEO_AS_DOC_THRESHOLD) {
+            // Large / long videos are sent as a document so WhatsApp accepts them
+            await conn.sendMessage(from, {
+                document: { url: tempFile },
+                mimetype: "video/mp4",
+                fileName: `${safeTitle}.mp4`,
+                caption
+            }, { quoted: mek });
+        } else {
+            await conn.sendMessage(from, {
+                video: { url: tempFile },
+                mimetype: "video/mp4",
+                fileName: `${safeTitle}.mp4`,
+                caption
+            }, { quoted: mek });
+        }
 
         await conn.sendMessage(from, {
             react: { text: "✅", key: m.key }
@@ -295,6 +281,9 @@ cmd({
                 ? "❌ Video download timed out. Please try again."
                 : `❌ Video download failed: ${error?.message || "Please try again later."}`
         );
+    } finally {
+        try { if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile); } catch {}
+        if (global.gc) global.gc();
     }
 });
 
