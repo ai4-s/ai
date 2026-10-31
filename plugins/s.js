@@ -45,52 +45,6 @@ function getVideoId(url) {
 }
 
 // ============================================
-// FRIEND'S EXACT SEARCH RESOLVER
-// ============================================
-async function resolveVideo(input) {
-    try {
-        const { default: yts } = await import('yt-search');
-
-        if (/^https?:\/\//i.test(input)) {
-            const videoId = getVideoId(input);
-            if (!videoId) return { error: "❌ Invalid YouTube URL!" };
-            const vid = await yts({ videoId });
-            if (vid) return { vid, url: vid.url };
-        } else {
-            const search = await yts(input);
-            if (search?.videos?.length) {
-                const vid = search.videos[0];
-                return { vid, url: vid.url };
-            }
-        }
-        return { error: "❌ No results found!" };
-    } catch (e) {
-        return { error: e?.message || "Search failed." };
-    }
-}
-
-// ============================================
-// Clean original yt-search URL (remove playlist / tracking params only)
-// ============================================
-function cleanYtUrl(url, videoId) {
-    if (!url || typeof url !== 'string') {
-        return `https://www.youtube.com/watch?v=${videoId}`;
-    }
-    try {
-        const u = new URL(url);
-        u.searchParams.delete('list');
-        u.searchParams.delete('index');
-        u.searchParams.delete('start_radio');
-        u.searchParams.delete('pp');
-        u.searchParams.delete('si');
-        u.searchParams.delete('feature');
-        return u.toString();
-    } catch {
-        return `https://www.youtube.com/watch?v=${videoId}`;
-    }
-}
-
-// ============================================
 // AUDIO API
 // ============================================
 const getAudioAPIs = (videoId) => [
@@ -101,79 +55,58 @@ const getAudioAPIs = (videoId) => [
 ];
 
 // ============================================
-// VIDEO API — takes the full vid object, uses vid.url first
+// VIDEO API — takes videoId directly
 // ============================================
-async function getErfanVideoData(vid) {
-    if (!vid || !vid.videoId || vid.videoId.length !== 11) {
-        throw new Error("Invalid YouTube video.");
+async function getErfanVideoData(videoId) {
+    if (!videoId || typeof videoId !== 'string' || videoId.length !== 11) {
+        throw new Error("Invalid YouTube video ID.");
     }
 
-    const videoId = vid.videoId;
-    const ytUrl = cleanYtUrl(vid.url, videoId);
-
-    // Attempt 1: the original yt-search URL (your request)
-    // Attempt 2: youtu.be/ID with quality=360p
-    // Attempt 3: youtu.be/ID no quality
-    // Attempt 4: youtube.com/watch?v=ID encoded
     const attempts = [
-        { url: ytUrl, q: "360p", encoded: false, label: "yt-search-url" },
-        { url: `https://youtu.be/${videoId}`, q: "360p", encoded: false, label: "youtu.be+360p" },
-        { url: `https://youtu.be/${videoId}`, q: null, encoded: false, label: "youtu.be" },
-        { url: `https://www.youtube.com/watch?v=${videoId}`, q: "360p", encoded: true, label: "watch-encoded" }
+        { url: `https://youtu.be/${videoId}`, q: "360p", encoded: false },
+        { url: `https://youtu.be/${videoId}`, q: null, encoded: false },
+        { url: `https://www.youtube.com/watch?v=${videoId}`, q: "360p", encoded: true }
     ];
 
     let lastError = null;
 
-    for (const a of attempts) {
-        const urlParam = a.encoded ? encodeURIComponent(a.url) : a.url;
-        let apiUrl = `${VIDEO_API_BASE}?url=${urlParam}&key=${VIDEO_API_KEY}`;
-        if (a.q) apiUrl += `&quality=${a.q}`;
+    for (let i = 0; i < attempts.length; i++) {
+        const a = attempts[i];
+        try {
+            const urlParam = a.encoded ? encodeURIComponent(a.url) : a.url;
+            let apiUrl = `${VIDEO_API_BASE}?url=${urlParam}&key=${VIDEO_API_KEY}`;
+            if (a.q) apiUrl += `&quality=${a.q}`;
 
-        // retry once on network errors
-        for (let retry = 0; retry < 2; retry++) {
-            try {
-                console.log(`[YT-API] (${a.label}) try ${retry + 1}: ${apiUrl}`);
+            const response = await axios.get(apiUrl, {
+                timeout: 90000,
+                headers: { "User-Agent": "Mozilla/5.0" },
+                validateStatus: () => true
+            });
 
-                const response = await axios.get(apiUrl, {
-                    timeout: 180000,
-                    headers: { "User-Agent": "Mozilla/5.0" },
-                    validateStatus: () => true
-                });
+            const body = response.data;
+            const data = body?.data;
+            const ok = body?.status === true || body?.status === "true";
 
-                const body = response.data;
-                const data = body?.data;
-                const ok = body?.status === true || body?.status === "true";
-
-                if (
-                    response.status === 200 &&
-                    ok &&
-                    data?.download &&
-                    typeof data.download === "string" &&
-                    data.download.startsWith("http")
-                ) {
-                    console.log(`[YT-API] ✅ (${a.label}) -> ${data.title}`);
-                    return {
-                        title: (data.title || "").toString().trim() || "YouTube Video",
-                        author: data.author || "Unknown",
-                        thumbnail: data.image || null,
-                        format: data.format || "mp4",
-                        download: data.download
-                    };
-                }
-
-                lastError = new Error(
-                    `${a.label}: ` + (body?.message || body?.error || `HTTP ${response.status}`)
-                );
-                console.log(`[YT-API] ❌ ${lastError.message}`);
-                break; // don't retry on API-level rejection
-            } catch (e) {
-                lastError = new Error(`${a.label}: ${e.message}`);
-                console.log(`[YT-API] ⚠️ ${lastError.message} (retry ${retry + 1}/2)`);
-                if (retry === 0) await new Promise(r => setTimeout(r, 2500));
+            if (
+                response.status === 200 &&
+                ok &&
+                data?.download &&
+                typeof data.download === "string" &&
+                data.download.startsWith("http")
+            ) {
+                return {
+                    title: (data.title || "").toString().trim() || "YouTube Video",
+                    author: data.author || "Unknown",
+                    thumbnail: data.image || null,
+                    format: data.format || "mp4",
+                    download: data.download
+                };
             }
+            lastError = new Error(body?.message || body?.error || `HTTP ${response.status}`);
+        } catch (e) {
+            lastError = e;
         }
     }
-
     throw lastError || new Error("Video API failed.");
 }
 
@@ -181,11 +114,11 @@ async function fetchVideoFromCandidates(candidates) {
     let lastError = null;
     for (let i = 0; i < candidates.length; i++) {
         try {
-            return await getErfanVideoData(candidates[i].vid);
+            return await getErfanVideoData(candidates[i].videoId);
         } catch (e) {
             lastError = e;
-            console.log(`[FALLBACK] candidate ${i + 1} failed: ${e.message}`);
-            if (i < candidates.length - 1) await new Promise(r => setTimeout(r, 700));
+            console.log(`[FALLBACK] candidate ${i + 1} (${candidates[i].videoId}) failed: ${e.message}`);
+            if (i < candidates.length - 1) await new Promise(r => setTimeout(r, 600));
         }
     }
     throw lastError || new Error("All candidate videos failed.");
@@ -197,7 +130,7 @@ async function downloadToTemp(url, prefix) {
         method: 'GET',
         url,
         responseType: 'stream',
-        timeout: 600000,
+        timeout: 300000,
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
         headers: {
@@ -240,11 +173,22 @@ cmd({
     try {
         if (!text) return reply("❌ Please provide song name\nExample: .play Shape of You");
 
-        const result = await resolveVideo(text);
-        if (result.error) return reply(result.error);
+        const { default: yts } = await import('yt-search');
+        let vid = null;
 
-        const { vid } = result;
-        if (!vid?.videoId) return reply("❌ No results found!");
+        if (text.startsWith('http://') || text.startsWith('https://')) {
+            if (!text.includes("youtube.com") && !text.includes("youtu.be"))
+                return reply("❌ Please provide a valid YouTube URL!");
+            const videoId = getVideoId(text);
+            if (!videoId) return reply("❌ Invalid YouTube URL!");
+            vid = await yts({ videoId });
+        } else {
+            const search = await yts(text);
+            if (!search?.videos?.length) return reply("❌ No song found!");
+            vid = search.videos[0];
+        }
+
+        if (!vid || !vid.videoId) return reply("❌ No results found!");
 
         await conn.sendMessage(from, {
             image: { url: vid.thumbnail },
@@ -303,12 +247,26 @@ cmd({
     try {
         if (!text) return reply("🎥 Please provide a video name or YouTube link!\n\nExample: `.video Alone Marshmello`");
 
-        const result = await resolveVideo(text.trim());
-        if (result.error) return reply(result.error);
+        const { default: yts } = await import("yt-search");
+        let vid;
+        let candidates;
 
-        const { vid } = result;
-        if (!vid?.videoId) return reply("❌ No video results found!");
-        const candidates = [{ vid }];
+        if (/^https?:\/\//i.test(text.trim())) {
+            if (!text.includes("youtube.com") && !text.includes("youtu.be"))
+                return reply("❌ Please provide a valid YouTube URL!");
+            const videoId = getVideoId(text);
+            if (!videoId) return reply("❌ Invalid YouTube URL!");
+            vid = await yts({ videoId });
+            if (!vid) return reply("❌ Could not fetch video info!");
+            candidates = [{ videoId }];
+        } else {
+            const search = await yts(text.trim());
+            if (!search?.videos?.length) return reply("❌ No video results found!");
+            vid = search.videos[0];
+            candidates = search.videos.slice(0, 3).map(v => ({ videoId: v.videoId }));
+        }
+
+        if (!vid || !vid.videoId) return reply("❌ No video results found!");
 
         const detailsCaption = `╭─────────────🎬
 │ 🎥 *VIDEO DOWNLOADER*
@@ -377,11 +335,22 @@ cmd({
     try {
         if (!text) return reply("🎶 Please provide a YouTube video name or link.\n\nExample: `.song Alone - Alan Walker`");
 
-        const result = await resolveVideo(text);
-        if (result.error) return reply(result.error);
+        const { default: yts } = await import('yt-search');
+        let vid = null;
 
-        const { vid } = result;
-        if (!vid?.videoId) return reply("❌ No results found!");
+        if (text.startsWith('http://') || text.startsWith('https://')) {
+            if (!text.includes("youtube.com") && !text.includes("youtu.be"))
+                return reply("❌ Please provide a valid YouTube URL!");
+            const videoId = getVideoId(text);
+            if (!videoId) return reply("❌ Invalid YouTube URL!");
+            vid = await yts({ videoId });
+        } else {
+            const search = await yts(text);
+            if (!search?.videos?.length) return reply("❌ No results found!");
+            vid = search.videos[0];
+        }
+
+        if (!vid || !vid.videoId) return reply("❌ No results found!");
 
         const caption = `*╭┈───〔 ${toSmallCaps('YT Downloader')} 〕┈───⊷*
 *├▢ 🎬 Title:* ${vid.title}
@@ -454,7 +423,7 @@ cmd({
                 let success = false;
                 let tempFile = null;
                 try {
-                    const apiData = await getErfanVideoData(vid);
+                    const apiData = await getErfanVideoData(vid.videoId);
                     const title = apiData.title || vid.title;
 
                     if (!asDocument) {
@@ -521,12 +490,26 @@ cmd({
     try {
         if (!text) return reply("🎬 Please provide a drama/movie name or link.\n\nExample: `.drama Muskan 5`");
 
-        const result = await resolveVideo(text.trim());
-        if (result.error) return reply(result.error);
+        const { default: yts } = await import('yt-search');
+        let vid = null;
+        let candidates;
 
-        const { vid } = result;
-        if (!vid?.videoId) return reply("❌ No results found!");
-        const candidates = [{ vid }];
+        if (/^https?:\/\//i.test(text.trim())) {
+            if (!text.includes("youtube.com") && !text.includes("youtu.be"))
+                return reply("❌ Please provide a valid YouTube URL!");
+            const videoId = getVideoId(text);
+            if (!videoId) return reply("❌ Invalid YouTube URL!");
+            vid = await yts({ videoId });
+            if (!vid) return reply("❌ Could not fetch video info!");
+            candidates = [{ videoId }];
+        } else {
+            const search = await yts(text.trim());
+            if (!search?.videos?.length) return reply("❌ No results found!");
+            vid = search.videos[0];
+            candidates = search.videos.slice(0, 3).map(v => ({ videoId: v.videoId }));
+        }
+
+        if (!vid || !vid.videoId) return reply("❌ No results found!");
 
         await conn.sendMessage(from, {
             image: { url: vid.thumbnail },
@@ -580,15 +563,26 @@ cmd({
     try {
         if (!text) return reply("🧸 Please provide a cartoon name!\n\nExample: `.cartoon Tom and Jerry`");
 
-        const isUrl = /^https?:\/\//i.test(text.trim());
-        const query = isUrl ? text.trim() : `${text} cartoon`;
+        const { default: yts } = await import('yt-search');
+        let vid = null;
+        let candidates;
 
-        const result = await resolveVideo(query);
-        if (result.error) return reply(result.error);
+        if (text.startsWith('http://') || text.startsWith('https://')) {
+            if (!text.includes("youtube.com") && !text.includes("youtu.be"))
+                return reply("❌ Please provide a valid YouTube URL!");
+            const videoId = getVideoId(text);
+            if (!videoId) return reply("❌ Invalid YouTube URL!");
+            vid = await yts({ videoId });
+            if (!vid) return reply("❌ Could not fetch video info!");
+            candidates = [{ videoId }];
+        } else {
+            const search = await yts(`${text} cartoon`);
+            if (!search?.videos?.length) return reply("❌ No cartoon results found!");
+            vid = search.videos[0];
+            candidates = search.videos.slice(0, 3).map(v => ({ videoId: v.videoId }));
+        }
 
-        const { vid } = result;
-        if (!vid?.videoId) return reply("❌ No results found!");
-        const candidates = [{ vid }];
+        if (!vid || !vid.videoId) return reply("❌ No results found!");
 
         await conn.sendMessage(from, {
             image: { url: vid.thumbnail },
@@ -656,12 +650,14 @@ cmd({
 
         await conn.sendMessage(from, { react: { text: "⚡", key: mek.key } });
 
-        const result = await resolveVideo(`${text} full movie`);
-        if (result.error) return reply(result.error);
+        const { default: yts } = await import('yt-search');
+        const search = await yts(`${text} full movie`);
+        if (!search?.videos?.length) return reply("❌ No results found!");
 
-        const { vid } = result;
-        if (!vid?.videoId) return reply("❌ No results found!");
-        const candidates = [{ vid }];
+        const vid = search.videos[0];
+        const candidates = search.videos.slice(0, 3).map(v => ({ videoId: v.videoId }));
+
+        if (!vid || !vid.videoId) return reply("❌ No results found!");
 
         await conn.sendMessage(from, {
             image: { url: vid.thumbnail },
