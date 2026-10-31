@@ -45,6 +45,16 @@ function getVideoId(url) {
 }
 
 // ============================================
+// SKIP BAD CANDIDATES (live/premiere/very-short-unknown)
+// ============================================
+function shouldSkip(vid) {
+    if (!vid || !vid.videoId) return true;
+    const title = (vid.title || '').toLowerCase();
+    if (/\b(live|premiere|stream|streaming|full album|jukebox|lyrical)\b/.test(title)) return true;
+    return false;
+}
+
+// ============================================
 // AUDIO API
 // ============================================
 const getAudioAPIs = (videoId) => [
@@ -64,7 +74,6 @@ async function getErfanVideoData(videoId) {
 
     const attempts = [
         { url: `https://youtu.be/${videoId}`, q: "360p", encoded: false },
-        { url: `https://youtu.be/${videoId}`, q: null, encoded: false },
         { url: `https://www.youtube.com/watch?v=${videoId}`, q: "360p", encoded: true }
     ];
 
@@ -78,7 +87,7 @@ async function getErfanVideoData(videoId) {
             if (a.q) apiUrl += `&quality=${a.q}`;
 
             const response = await axios.get(apiUrl, {
-                timeout: 90000,
+                timeout: 120000,
                 headers: { "User-Agent": "Mozilla/5.0" },
                 validateStatus: () => true
             });
@@ -118,7 +127,7 @@ async function fetchVideoFromCandidates(candidates) {
         } catch (e) {
             lastError = e;
             console.log(`[FALLBACK] candidate ${i + 1} (${candidates[i].videoId}) failed: ${e.message}`);
-            if (i < candidates.length - 1) await new Promise(r => setTimeout(r, 600));
+            if (i < candidates.length - 1) await new Promise(r => setTimeout(r, 400));
         }
     }
     throw lastError || new Error("All candidate videos failed.");
@@ -130,7 +139,7 @@ async function downloadToTemp(url, prefix) {
         method: 'GET',
         url,
         responseType: 'stream',
-        timeout: 300000,
+        timeout: 600000,
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
         headers: {
@@ -262,8 +271,13 @@ cmd({
         } else {
             const search = await yts(text.trim());
             if (!search?.videos?.length) return reply("❌ No video results found!");
-            vid = search.videos[0];
-            candidates = search.videos.slice(0, 3).map(v => ({ videoId: v.videoId }));
+
+            // Skip live/premiere/jukebox candidates (API can't download them)
+            const filtered = search.videos.filter(v => !shouldSkip(v));
+            if (!filtered.length) return reply("⚠️ Only live/premiere results found.\nTry a different search.");
+
+            vid = filtered[0];
+            candidates = filtered.slice(0, 5).map(v => ({ videoId: v.videoId }));
         }
 
         if (!vid || !vid.videoId) return reply("❌ No video results found!");
@@ -313,10 +327,14 @@ cmd({
         try { if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile); } catch {}
         console.error("[VIDEO] Error:", error?.response?.data || error?.message || error);
         await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
+        const msg = error?.message || "Please try again later.";
+        if (msg.includes("No URL") || msg.includes("No download")) {
+            return reply("⚠️ This video can't be downloaded (maybe age-restricted or region-locked).\nTry a different video.");
+        }
         return reply(
             error?.code === "ECONNABORTED"
                 ? "❌ Video download timed out. Please try again."
-                : `❌ Video download failed: ${error?.message || "Please try again later."}`
+                : `❌ Video download failed: ${msg}`
         );
     }
 });
@@ -476,19 +494,19 @@ cmd({
 });
 
 // ============================================
-// COMMAND: DRAMA - DIRECT DOCUMENT
+// COMMAND: DRAMA — SAME METHOD AS MOVIE (search + first result + document)
 // ============================================
 cmd({
     pattern: "drama",
     alias: ["film", "series"],
-    desc: "Download YouTube drama/movie video as document",
+    desc: "Download YouTube drama episode as document",
     category: "download",
     react: "🎬",
     filename: __filename
 }, async (conn, mek, m, { from, text, reply }) => {
     let tempFile = null;
     try {
-        if (!text) return reply("🎬 Please provide a drama/movie name or link.\n\nExample: `.drama Muskan 5`");
+        if (!text) return reply("🎬 Please provide a drama name or link.\n\nExample: `.drama Muskan 5`");
 
         const { default: yts } = await import('yt-search');
         let vid = null;
@@ -503,10 +521,15 @@ cmd({
             if (!vid) return reply("❌ Could not fetch video info!");
             candidates = [{ videoId }];
         } else {
-            const search = await yts(text.trim());
+            // Same pattern as movie: search with "full episode" suffix
+            const search = await yts(`${text} full episode`);
             if (!search?.videos?.length) return reply("❌ No results found!");
-            vid = search.videos[0];
-            candidates = search.videos.slice(0, 3).map(v => ({ videoId: v.videoId }));
+
+            const filtered = search.videos.filter(v => !shouldSkip(v));
+            if (!filtered.length) return reply("❌ No episode found. Try a different search.");
+
+            vid = filtered[0];
+            candidates = filtered.slice(0, 3).map(v => ({ videoId: v.videoId }));
         }
 
         if (!vid || !vid.videoId) return reply("❌ No results found!");
@@ -543,7 +566,11 @@ _⚡ Downloading as document..._
     } catch (e) {
         try { if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile); } catch {}
         console.error("Error in .drama command:", e);
-        reply(`❌ Drama download failed: ${e?.message || "Please try again later."}`);
+        const msg = e?.message || "Please try again later.";
+        if (msg.includes("No URL") || msg.includes("No download")) {
+            return reply("⚠️ This episode can't be downloaded (maybe age-restricted or too long).\nTry a shorter episode or different drama.");
+        }
+        reply(`❌ Drama download failed: ${msg}`);
         await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
     }
 });
@@ -578,8 +605,10 @@ cmd({
         } else {
             const search = await yts(`${text} cartoon`);
             if (!search?.videos?.length) return reply("❌ No cartoon results found!");
-            vid = search.videos[0];
-            candidates = search.videos.slice(0, 3).map(v => ({ videoId: v.videoId }));
+            const filtered = search.videos.filter(v => !shouldSkip(v));
+            if (!filtered.length) return reply("❌ No cartoon results found!");
+            vid = filtered[0];
+            candidates = filtered.slice(0, 3).map(v => ({ videoId: v.videoId }));
         }
 
         if (!vid || !vid.videoId) return reply("❌ No results found!");
@@ -632,7 +661,7 @@ cmd({
 });
 
 // ============================================
-// COMMAND: MOVIEA
+// COMMAND: MOVIEA (unchanged — it works)
 // ============================================
 cmd({
     pattern: "moviea",
