@@ -45,37 +45,28 @@ function getVideoId(url) {
 }
 
 // ============================================
-// SMART RANK (skips promos/trailers, prefers episode/full)
+// FRIEND'S EXACT SEARCH RESOLVER
 // ============================================
-function toSeconds(v) {
-    if (typeof v?.duration?.seconds === 'number') return v.duration.seconds;
-    if (typeof v?.seconds === 'number') return v.seconds;
-    const ts = v?.timestamp || v?.duration?.timestamp;
-    if (typeof ts === 'string' && ts.includes(':')) {
-        const parts = ts.split(':').map(Number);
-        if (parts.length === 2 && parts.every(n => !isNaN(n))) return parts[0] * 60 + parts[1];
-        if (parts.length === 3 && parts.every(n => !isNaN(n))) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-    }
-    return 0;
-}
+async function resolveVideo(input) {
+    try {
+        const { default: yts } = await import('yt-search');
 
-function rankVideos(videos, preferWords = []) {
-    if (!Array.isArray(videos) || videos.length === 0) return [];
-    const arr = videos.slice();
-    const score = (v) => {
-        let s = 0;
-        const t = (v?.title || '').toLowerCase();
-        if (/\b(promo|trailer|teaser|preview|first\s*look)\b/.test(t)) s -= 1000;
-        const sec = toSeconds(v);
-        if (sec > 0 && sec < 120) s -= 500;
-        for (const w of preferWords) {
-            if (t.includes(w.toLowerCase())) s += 800;
+        if (/^https?:\/\//i.test(input)) {
+            const videoId = getVideoId(input);
+            if (!videoId) return { error: "❌ Invalid YouTube URL!" };
+            const vid = await yts({ videoId });
+            if (vid) return { vid, url: vid.url };
+        } else {
+            const search = await yts(input);
+            if (search?.videos?.length) {
+                const vid = search.videos[0];
+                return { vid, url: vid.url };
+            }
         }
-        if (sec > 0) s += Math.min(sec / 60, 100);
-        return s;
-    };
-    arr.sort((a, b) => score(b) - score(a));
-    return arr;
+        return { error: "❌ No results found!" };
+    } catch (e) {
+        return { error: e?.message || "Search failed." };
+    }
 }
 
 // ============================================
@@ -89,7 +80,7 @@ const getAudioAPIs = (videoId) => [
 ];
 
 // ============================================
-// VIDEO API — takes videoId directly (never uses vid.url)
+// VIDEO API — takes videoId directly
 // ============================================
 async function getErfanVideoData(videoId) {
     if (!videoId || typeof videoId !== 'string' || videoId.length !== 11) {
@@ -207,22 +198,11 @@ cmd({
     try {
         if (!text) return reply("❌ Please provide song name\nExample: .play Shape of You");
 
-        const { default: yts } = await import('yt-search');
-        let vid = null;
+        const result = await resolveVideo(text);
+        if (result.error) return reply(result.error);
 
-        if (text.startsWith('http://') || text.startsWith('https://')) {
-            if (!text.includes("youtube.com") && !text.includes("youtu.be"))
-                return reply("❌ Please provide a valid YouTube URL!");
-            const videoId = getVideoId(text);
-            if (!videoId) return reply("❌ Invalid YouTube URL!");
-            vid = await yts({ videoId });
-        } else {
-            const search = await yts(text);
-            if (!search?.videos?.length) return reply("❌ No song found!");
-            vid = search.videos[0];
-        }
-
-        if (!vid || !vid.videoId) return reply("❌ No results found!");
+        const { vid } = result;
+        if (!vid?.videoId) return reply("❌ No results found!");
 
         await conn.sendMessage(from, {
             image: { url: vid.thumbnail },
@@ -281,27 +261,12 @@ cmd({
     try {
         if (!text) return reply("🎥 Please provide a video name or YouTube link!\n\nExample: `.video Alone Marshmello`");
 
-        const { default: yts } = await import("yt-search");
-        let vid;
-        let candidates;
+        const result = await resolveVideo(text.trim());
+        if (result.error) return reply(result.error);
 
-        if (/^https?:\/\//i.test(text.trim())) {
-            if (!text.includes("youtube.com") && !text.includes("youtu.be"))
-                return reply("❌ Please provide a valid YouTube URL!");
-            const videoId = getVideoId(text);
-            if (!videoId) return reply("❌ Invalid YouTube URL!");
-            vid = await yts({ videoId });
-            if (!vid) return reply("❌ Could not fetch video info!");
-            candidates = [{ videoId }];
-        } else {
-            const search = await yts(text.trim());
-            if (!search?.videos?.length) return reply("❌ No video results found!");
-            const ranked = rankVideos(search.videos, []);
-            vid = ranked[0];
-            candidates = ranked.slice(0, 3).map(v => ({ videoId: v.videoId }));
-        }
-
-        if (!vid || !vid.videoId) return reply("❌ No video results found!");
+        const { vid } = result;
+        if (!vid?.videoId) return reply("❌ No video results found!");
+        const candidates = [{ videoId: vid.videoId }];
 
         const detailsCaption = `╭─────────────🎬
 │ 🎥 *VIDEO DOWNLOADER*
@@ -370,22 +335,11 @@ cmd({
     try {
         if (!text) return reply("🎶 Please provide a YouTube video name or link.\n\nExample: `.song Alone - Alan Walker`");
 
-        const { default: yts } = await import('yt-search');
-        let vid = null;
+        const result = await resolveVideo(text);
+        if (result.error) return reply(result.error);
 
-        if (text.startsWith('http://') || text.startsWith('https://')) {
-            if (!text.includes("youtube.com") && !text.includes("youtu.be"))
-                return reply("❌ Please provide a valid YouTube URL!");
-            const videoId = getVideoId(text);
-            if (!videoId) return reply("❌ Invalid YouTube URL!");
-            vid = await yts({ videoId });
-        } else {
-            const search = await yts(text);
-            if (!search?.videos?.length) return reply("❌ No results found!");
-            vid = search.videos[0];
-        }
-
-        if (!vid || !vid.videoId) return reply("❌ No results found!");
+        const { vid } = result;
+        if (!vid?.videoId) return reply("❌ No results found!");
 
         const caption = `*╭┈───〔 ${toSmallCaps('YT Downloader')} 〕┈───⊷*
 *├▢ 🎬 Title:* ${vid.title}
@@ -525,27 +479,12 @@ cmd({
     try {
         if (!text) return reply("🎬 Please provide a drama/movie name or link.\n\nExample: `.drama Muskan 5`");
 
-        const { default: yts } = await import('yt-search');
-        let vid = null;
-        let candidates;
+        const result = await resolveVideo(text.trim());
+        if (result.error) return reply(result.error);
 
-        if (/^https?:\/\//i.test(text.trim())) {
-            if (!text.includes("youtube.com") && !text.includes("youtu.be"))
-                return reply("❌ Please provide a valid YouTube URL!");
-            const videoId = getVideoId(text);
-            if (!videoId) return reply("❌ Invalid YouTube URL!");
-            vid = await yts({ videoId });
-            if (!vid) return reply("❌ Could not fetch video info!");
-            candidates = [{ videoId }];
-        } else {
-            const search = await yts(text.trim());
-            if (!search?.videos?.length) return reply("❌ No results found!");
-            const ranked = rankVideos(search.videos, ['episode', 'full', 'part']);
-            vid = ranked[0];
-            candidates = ranked.slice(0, 3).map(v => ({ videoId: v.videoId }));
-        }
-
-        if (!vid || !vid.videoId) return reply("❌ No results found!");
+        const { vid } = result;
+        if (!vid?.videoId) return reply("❌ No results found!");
+        const candidates = [{ videoId: vid.videoId }];
 
         await conn.sendMessage(from, {
             image: { url: vid.thumbnail },
@@ -599,27 +538,15 @@ cmd({
     try {
         if (!text) return reply("🧸 Please provide a cartoon name!\n\nExample: `.cartoon Tom and Jerry`");
 
-        const { default: yts } = await import('yt-search');
-        let vid = null;
-        let candidates;
+        const isUrl = /^https?:\/\//i.test(text.trim());
+        const query = isUrl ? text.trim() : `${text} cartoon`;
 
-        if (text.startsWith('http://') || text.startsWith('https://')) {
-            if (!text.includes("youtube.com") && !text.includes("youtu.be"))
-                return reply("❌ Please provide a valid YouTube URL!");
-            const videoId = getVideoId(text);
-            if (!videoId) return reply("❌ Invalid YouTube URL!");
-            vid = await yts({ videoId });
-            if (!vid) return reply("❌ Could not fetch video info!");
-            candidates = [{ videoId }];
-        } else {
-            const search = await yts(`${text} cartoon`);
-            if (!search?.videos?.length) return reply("❌ No cartoon results found!");
-            const ranked = rankVideos(search.videos, ['episode', 'full']);
-            vid = ranked[0];
-            candidates = ranked.slice(0, 3).map(v => ({ videoId: v.videoId }));
-        }
+        const result = await resolveVideo(query);
+        if (result.error) return reply(result.error);
 
-        if (!vid || !vid.videoId) return reply("❌ No results found!");
+        const { vid } = result;
+        if (!vid?.videoId) return reply("❌ No results found!");
+        const candidates = [{ videoId: vid.videoId }];
 
         await conn.sendMessage(from, {
             image: { url: vid.thumbnail },
@@ -687,15 +614,12 @@ cmd({
 
         await conn.sendMessage(from, { react: { text: "⚡", key: mek.key } });
 
-        const { default: yts } = await import('yt-search');
-        const search = await yts(`${text} full movie`);
-        if (!search?.videos?.length) return reply("❌ No results found!");
+        const result = await resolveVideo(`${text} full movie`);
+        if (result.error) return reply(result.error);
 
-        const ranked = rankVideos(search.videos, ['full movie', 'full film']);
-        const vid = ranked[0];
-        const candidates = ranked.slice(0, 3).map(v => ({ videoId: v.videoId }));
-
-        if (!vid || !vid.videoId) return reply("❌ No results found!");
+        const { vid } = result;
+        if (!vid?.videoId) return reply("❌ No results found!");
+        const candidates = [{ videoId: vid.videoId }];
 
         await conn.sendMessage(from, {
             image: { url: vid.thumbnail },
